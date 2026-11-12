@@ -1,0 +1,22 @@
+services:
+  viximage:
+    build:
+      context: .
+      args:
+        VERSION: "0.1.0"
+    image: viximage:0.1.0
+    container_name: viximage
+    restart: unless-stopped
+    ports:
+      # GUI 控制台
+      - "8080:8080"
+      # API 服务
+      - "8090:8090"
+    volumes:
+      # 配置 / 数据库 / 缓存 / 作品 / 上传，均持久化在此
+      - viximage-data:/data
+    environment:
+      - TZ=Asia/Shanghai
+
+volumes:
+  viximage-data:

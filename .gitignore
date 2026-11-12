@@ -1,0 +1,29 @@
+# 构建产物
+/viximage
+*.exe
+/dist/
+*.test
+*.out
+
+# 运行数据（配置/库/产出/上传/缓存）
+config.json
+*.db
+*.db-journal
+/data/
+/outputs/
+/uploads/
+/work/
+/cache/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 工具/编辑器缓存
+.codebuddy/
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.log
+

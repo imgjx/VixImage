@@ -1,0 +1,26 @@
+# 构建产物与依赖缓存
+dist/
+/viximage
+*.exe
+*.test
+*.out
+
+# 运行数据
+config.json
+*.db
+/data/
+/outputs/
+/uploads/
+/cache/
+
+# 工具与编辑器缓存
+.codebuddy/
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.log
+
+# Git
+.git/
+.gitignore

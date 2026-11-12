@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VixImage · 控制台</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#0a0e1a; color:#e8eefc; font-family: system-ui,"Segoe UI",sans-serif; }
+  .top { display:flex; align-items:center; padding:14px 22px; background:#101a30; border-bottom:1px solid #243a63; }
+  .logo { font-weight:700; font-size:18px; letter-spacing:1px; }
+  .logo span { color:#7c3aed; }
+  .nav { margin-left:30px; display:flex; gap:6px; }
+  .nav a { color:#9ec5ff; text-decoration:none; padding:8px 14px; border-radius:8px; font-size:14px; }
+  .nav a:hover, .nav a.on { background:#1b2b4a; color:#fff; }
+  .right { margin-left:auto; font-size:13px; color:#7d93bd; }
+  .right button { background:#22324f; border:0; color:#cfe0ff; padding:7px 12px; border-radius:8px; cursor:pointer; }
+  .wrap { padding:26px; max-width:1100px; margin:0 auto; }
+  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+  .card { background:#101a30; border:1px solid #243a63; border-radius:14px; padding:18px; }
+  .card .n { font-size:30px; font-weight:700; }
+  .card .l { color:#7d93bd; font-size:13px; margin-top:6px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:18px; }
+  .box { background:#101a30; border:1px solid #243a63; border-radius:14px; padding:18px; }
+  .box h3 { margin:0 0 12px; font-size:15px; color:#9ec5ff; }
+  code { background:#0c1426; padding:2px 6px; border-radius:5px; color:#9ec5ff; }
+  ul { margin:8px 0; padding-left:18px; line-height:1.7; font-size:14px; color:#cdd9f0; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="logo">Vix<span>Image</span></div>
+    <div class="nav">
+      <a href="/" class="on">概览</a>
+      <a href="/mymodels">我的模型</a>
+      <a href="/upstream">上游模型</a>
+      <a href="/playground">Playground</a>
+      <a href="/config">系统配置</a>
+    </div>
+    <div class="right"><span id="user"></span> · <button onclick="logout()">退出</button></div>
+  </div>
+  <div class="wrap">
+    <div class="cards" id="cards"></div>
+    <div class="grid2">
+      <div class="box">
+        <h3>快速上手</h3>
+        <ul>
+          <li>在 <b>上游模型</b> 添加图片模型与大模型（仅多模态）：可填「对 Agent 的介绍」「多尺寸」，LLM 需设 <b>max_tokens</b>（小上下文模型务必配置）。</li>
+          <li>在 <b>我的模型</b> 创建 Agent：基架模型 + 图片模型（每个配「单次生图消耗步数」）+ 总步数预算（默认 100）+ <b>步数耗尽策略</b> + 风格模式。</li>
+          <li>用 <b>Playground</b> 直接试玩上游生图；用 API <code>POST /v1/agents/run</code> 调起（可传参考图，<code>ref:N</code> 嵌入编辑）。</li>
+          <li><b>自循环 Agent</b>：技能全是图像工作。每次大模型请求 = 1 步，一轮可一次执行多个工具（建画布 / 生图 / 加删改图层 / 抠图虚化旋转斜体…），带「查看作品」与「完成信号」两个链底工具。Agent 能反复观摩自己的成片、多轮迭代，而非一次性吐出全部排版。<b>质量铁律</b>：成片必须完美、只允许极细微瑕疵，完成或大改后主动查看自检偏移；<b>系统级强制 view</b>：提交产物前由系统拦截 finish，强制回看当前成片，看过并确认才交付。</li>
+          <li><b>更主动的创意实现 + 画中画透视贴合</b>：主提示词教 Agent 别平铺贴图，把参考图变成画面里的「物件内容」——斜放设备屏幕 / 相框 / 橱窗 / 画中画。用 <code>gen{ref:0}</code> 或扩展 <code>ref</code>（产物 id / 图片网址，把任意已有图再做图生图）生成场景；<code>img</code> 用 <code>persp</code>/<code>shear</code> 把平面贴图映射成斜放表面、真正贴到屏幕上（比单纯 <code>rot</code> 更贴合），再叠加 <code>radius/border/shadow</code> 嵌入。例如「给一张参考图，做男孩盯着一台斜放的电脑、屏幕里正是这张参考图」。</li>
+          <li><b>写死学习数据 + 缓存省钱</b>：主提示词与 Few-shot 学习数据都是写死常量，拼成恒定 system 前缀（主提示词在前、学习数据在后），同模型每轮一致可命中上游缓存；动态内容全放后面的 user 消息。「我的模型」可独立开关学习数据。</li>
+          <li><b>中间产物可管理</b>：用户参考图也进产物表并标注；<b>复制产物</b>（存档 / 分叉 / 复用）、<b>回滚编辑</b>（动作级撤销，只退排版不退素材）、<b>查看图层</b>清单，改坏了随时回退重来。</li>
+          <li>上下文按 <b>主提示词 → 紧凑上下文（剩余步数 + 图像模型列表）→ 产物表 → 上一轮结果（仅生图/查看有输出图）→ 用户要求</b> 拼接；编辑轮只回「是否成功」，保持紧凑。</li>
+          <li>全链路<b>无兜底</b>：解析失败 / 非法工具 / 生图失败 / 渲染失败一律直接报错；提示词防注入，拒绝「满屏重复字符」类爆量输出。中间产物 100% 删除。</li>
+          <li>调用概述支持<b>分页</b>与每步<b>思考轨迹</b>；API 加 <code>"trace": true</code> 可附带每步短 ThinkFlag。</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>运行模式</h3>
+        <ul>
+          <li>存储：<code id="storage"></code>（SQLite / MySQL 双模式）</li>
+          <li>缓存：<code id="cache"></code>（File / Redis 双模式）</li>
+          <li>GUI 端口：<code id="guiport"></code> · API 端口：<code id="apiport"></code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+<script src="/session.js"></script>
+<script>
+async function load(){
+  const st=await (await fetch('/api/state')).json();
+  document.getElementById('user').textContent=st.username;
+  document.getElementById('storage').textContent=st.storage;
+  document.getElementById('cache').textContent=st.cache;
+  document.getElementById('guiport').textContent=st.gui_port;
+  document.getElementById('apiport').textContent=st.api_port;
+  const ov=await (await fetch('/api/overview')).json();
+  const s=ov.stats||{};
+  const cards=[
+    ['总调用', s.total||0],['成功', s.success||0],['失败', s.failed||0],['产出图片', s.outputs||0]
+  ];
+  document.getElementById('cards').innerHTML=cards.map(c=>`<div class="card"><div class="n">${c[1]}</div><div class="l">${c[0]}</div></div>`).join('');
+}
+async function logout(){ try{ localStorage.removeItem('vix_sid'); }catch(e){} await fetch('/api/logout',{method:'POST'}); location.href='/login'; }
+load();
+</script>
+</body>
+</html>

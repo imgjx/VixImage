@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VixImage · 我的模型</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#0a0e1a; color:#e8eefc; font-family: system-ui,"Segoe UI",sans-serif; }
+  .top { display:flex; align-items:center; padding:14px 22px; background:#101a30; border-bottom:1px solid #243a63; }
+  .logo { font-weight:700; font-size:18px; letter-spacing:1px; }
+  .logo span { color:#7c3aed; }
+  .nav { margin-left:30px; display:flex; gap:6px; }
+  .nav a { color:#9ec5ff; text-decoration:none; padding:8px 14px; border-radius:8px; font-size:14px; }
+  .nav a:hover, .nav a.on { background:#1b2b4a; color:#fff; }
+  .right { margin-left:auto; font-size:13px; color:#7d93bd; }
+  .right button { background:#22324f; border:0; color:#cfe0ff; padding:7px 12px; border-radius:8px; cursor:pointer; }
+  .wrap { padding:26px; max-width:1280px; margin:0 auto; display:grid; grid-template-columns:440px 1fr; gap:20px; }
+  .box { background:#101a30; border:1px solid #243a63; border-radius:14px; padding:18px; }
+  h3 { margin:0 0 14px; font-size:15px; color:#9ec5ff; }
+  label { display:block; font-size:12px; color:#8fb2e6; margin:10px 0 5px; }
+  input,select,textarea { width:100%; padding:9px 11px; border-radius:8px; border:1px solid #2c4470; background:#0c1426; color:#e8eefc; font-size:13px; box-sizing:border-box; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  button.add { margin-top:16px; width:100%; padding:11px; border:0; border-radius:9px; cursor:pointer; background:linear-gradient(90deg,#3b82f6,#7c3aed); color:#fff; font-weight:600; }
+  button.add.ghost { background:#1b2b4a; color:#9ec5ff; }
+  .err { color:#ff7b7b; font-size:12px; margin-top:8px; min-height:14px; }
+  .ok { color:#4ade80; font-size:12px; margin-top:8px; min-height:14px; }
+  .im-row { display:grid; grid-template-columns:1fr 90px 30px; gap:8px; margin-bottom:8px; align-items:center; }
+  .im-row button { background:#3a1414; color:#ff7b7b; border:0; border-radius:6px; cursor:pointer; height:34px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { padding:9px 10px; text-align:left; border-bottom:1px solid #1c2c4a; }
+  th { color:#9ec5ff; }
+  tr.sel td { background:#152443; }
+  .del { background:#3a1414; color:#ff7b7b; border:0; padding:5px 10px; border-radius:6px; cursor:pointer; }
+  .edit { background:#1b3a5c; color:#9ec5ff; border:0; padding:5px 10px; border-radius:6px; cursor:pointer; margin-right:6px; }
+  .pill { padding:2px 8px; border-radius:6px; background:#1b2b4a; font-size:12px; display:inline-block; margin:2px 3px 2px 0; }
+  .tag-deep { padding:2px 7px; border-radius:6px; background:#3b2a6b; color:#c4b5fd; font-size:11px; }
+  label.chk { display:inline-block; font-size:13px; color:#cdd9f0; margin-top:12px; margin-bottom:0; line-height:1.5; white-space:normal; }
+  label.chk input { width:auto; margin-right:8px; vertical-align:middle; }
+  label.chk span { display:inline; }
+  .hint { font-size:11px; color:#6f86b0; margin-top:4px; line-height:1.5; }
+  .mode { border:1px solid #2c4470; border-radius:9px; padding:10px 12px; background:#0c1426; margin-top:12px; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="logo">Vix<span>Image</span></div>
+    <div class="nav">
+      <a href="/">概览</a>
+      <a href="/mymodels" class="on">我的模型</a>
+      <a href="/upstream">上游模型</a>
+      <a href="/playground">Playground</a>
+      <a href="/config">系统配置</a>
+    </div>
+    <div class="right"><button onclick="logout()">退出</button></div>
+  </div>
+  <div class="wrap">
+    <div class="box">
+      <h3 id="formTitle">创建我的模型（Agent）</h3>
+      <label>模型名 *</label><input id="name" placeholder="例如：海报设计师">
+      <label>调用名 *（API 调起用，唯一）</label><input id="call_name" placeholder="poster_agent">
+      <label>Agent 基架模型 *（多模态大模型）</label><select id="base_model_id"></select>
+      <label>总步数预算 *（默认 100）</label><input id="max_steps" type="number" value="100">
+      <div class="hint">Agent 自循环：<b>每次大模型请求算 1 步</b>，每次生图额外消耗该图像模型配置的「单次步数」（下方「步数」列，默认 30）。编辑/查看/完成不单独计步。上下文会告诉模型剩余步数。步数不必用完，收到完成信号即结束。</div>
+      <label>步数用完仍未完成时 *</label>
+      <select id="exhaust">
+        <option value="fail">生成失败 —— 直接报错（默认，无兜底）</option>
+        <option value="partial">返回半成品 —— 交付当前已渲染的画布</option>
+      </select>
+      <div class="hint">耗尽策略按每个模型独立配置。fail = 未完成即失败；partial = 若画布已建立则返回当前半吊子成片。</div>
+      <label>风格模式（决定 LLM 规划排版时的创作姿态）</label>
+      <select id="style">
+        <option value="on_demand">按需执行 —— 用户要啥就做啥，不加戏</option>
+        <option value="creative">创意脑洞 —— 主动加创意（斜放/斜体/圆形抠图/跳色拼贴等）</option>
+        <option value="cinematic">电影大片 —— 电影级质感与光影，分层克制高级</option>
+      </select>
+      <label>角色/系统提示词</label><textarea id="prompt" rows="3" placeholder="可选，给 Agent 的规划风格说明"></textarea>
+
+      <div class="mode">
+        <label class="chk"><input type="checkbox" id="deep_think"><span><b>深度思考模式</b> —— 规划前先推演构图</span></label>
+        <div class="hint">开启后，基座模型会先推演需求、构图与配色，再输出工具；受模型 max_tokens 限制，小上下文模型建议关闭。</div>
+        <label class="chk"><input type="checkbox" id="learning" checked><span><b>学习数据（Few-shot 示范）</b> —— 主提示词后拼一段写死示范</span></label>
+        <div class="hint">示范教 Agent「一轮铺完整版」「参考图做斜放屏幕画中画」「大改后自检」等创意思路与输出格式。<b>主提示词与学习数据都写死、位于最前的 system 前缀，同模型恒定可命中上游缓存省钱</b>；关闭则只发主提示词。动态内容（步数/产物表/用户要求）一律放在后面。</div>
+      </div>
+
+      <label>图片模型列表 *（「步数」= 每生成一张图消耗的步数）</label>
+      <div id="imlist"></div>
+      <button class="add ghost" onclick="addImRow()">+ 添加图片模型</button>
+      <button class="add" id="submitBtn" onclick="submit()">创建模型</button>
+      <button class="add ghost" id="cancelBtn" style="display:none" onclick="resetForm()">取消编辑</button>
+      <div class="err" id="err"></div>
+      <div class="ok" id="ok"></div>
+    </div>
+    <div class="box">
+      <h3>我的模型</h3>
+      <table>
+        <thead><tr><th>ID</th><th>名称</th><th>调用名</th><th>基架</th><th>步数</th><th>图片模型</th><th>模式</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
+<script src="/session.js"></script>
+<script>
+let upCache=[]; let editingId=0;
+
+async function loadUp(){
+  const j=await (await fetch('/api/upstream')).json();
+  upCache=j.upstream||[];
+  const llm=upCache.filter(m=>m.type==='llm');
+  const img=upCache.filter(m=>m.type==='image');
+  document.getElementById('base_model_id').innerHTML=llm.map(m=>`<option value="${m.id}">${esc(m.name)} (${esc(m.model_name)})</option>`).join('')||'<option value="0">（请先在上游模型添加多模态大模型）</option>';
+  if(document.getElementById('imlist').children.length===0 && img.length){ addImRow(); }
+  window.imgModels=img;
+}
+
+function addImRow(upstreamId, steps){
+  const img=window.imgModels||[];
+  const sel=img.map(m=>`<option value="${m.id}" ${m.id==upstreamId?'selected':''}>${esc(m.name)}</option>`).join('')||'<option value="0">（请先添加图片模型）</option>';
+  const d=document.createElement('div'); d.className='im-row';
+  d.innerHTML=`<select class="imm">${sel}</select><input class="ims" type="number" value="${steps||30}" min="1" title="单次生图消耗步数"><button onclick="this.parentNode.remove()">×</button>`;
+  document.getElementById('imlist').appendChild(d);
+}
+
+function resetForm(){
+  editingId=0;
+  document.getElementById('formTitle').textContent='创建我的模型（Agent）';
+  document.getElementById('submitBtn').textContent='创建模型';
+  document.getElementById('cancelBtn').style.display='none';
+  ['name','call_name','max_steps','prompt'].forEach(k=>document.getElementById(k).value = k==='max_steps'?'100':'');
+  document.getElementById('deep_think').checked=false;
+  document.getElementById('learning').checked=true;
+  document.getElementById('style').value='on_demand';
+  document.getElementById('exhaust').value='fail';
+  document.getElementById('imlist').innerHTML='';
+  document.getElementById('err').textContent='';
+  document.getElementById('ok').textContent='';
+  if((window.imgModels||[]).length) addImRow();
+  document.querySelectorAll('#rows tr').forEach(tr=>tr.classList.remove('sel'));
+}
+
+async function submit(){
+  const ims=[...document.querySelectorAll('#imlist .im-row')].map(r=>({upstream_id:parseInt(r.querySelector('.imm').value),steps:parseInt(r.querySelector('.ims').value||'1')}));
+  const body={
+    name:name_.value, call_name:call_name_.value, base_model_id:parseInt(base_model_id.value),
+    max_steps:parseInt(max_steps.value||'0'), prompt:prompt_.value,
+    style:document.getElementById('style').value,
+    exhaust:document.getElementById('exhaust').value,
+    learning:document.getElementById('learning').checked?'on':'off',
+    deep_think:document.getElementById('deep_think').checked, image_models:ims
+  };
+  err_.textContent=''; ok_.textContent='';
+  let r;
+  if(editingId){
+    r=await fetch('/api/agents/'+editingId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  }else{
+    r=await fetch('/api/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  }
+  const j=await r.json().catch(()=>({}));
+  if(r.ok&&j.ok){
+    ok_.textContent = editingId ? '已保存修改' : '创建成功';
+    resetForm(); loadAgents();
+  }else err_.textContent=j.error||'保存失败';
+}
+
+// 载入模型到表单进行编辑
+async function edit(id){
+  const j=await (await fetch('/api/agents/'+id)).json();
+  if(!j||!j.id){ err_.textContent='读取失败'; return; }
+  editingId=j.id;
+  document.getElementById('formTitle').textContent='编辑模型 #'+j.id;
+  document.getElementById('submitBtn').textContent='保存修改';
+  document.getElementById('cancelBtn').style.display='block';
+  name_.value=j.name||''; call_name_.value=j.call_name||'';
+  base_model_id.value=j.base_model_id; max_steps.value=j.max_steps;
+  prompt_.value=j.prompt||'';
+  document.getElementById('style').value=j.style||'on_demand';
+  document.getElementById('exhaust').value=j.exhaust||'fail';
+  document.getElementById('learning').checked=(j.learning!=='off');
+  document.getElementById('deep_think').checked=!!j.deep_think;
+  document.getElementById('imlist').innerHTML='';
+  (j.image_models||[]).forEach(x=>addImRow(x.upstream_id,x.steps));
+  if(!(j.image_models||[]).length) addImRow();
+  err_.textContent=''; ok_.textContent='';
+  document.querySelectorAll('#rows tr').forEach(tr=>{ if(tr.dataset.id==String(id)) tr.classList.add('sel'); else tr.classList.remove('sel'); });
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+async function del(id){ if(!confirm('确认删除该模型？')) return; await fetch('/api/agents/'+id,{method:'DELETE'}); if(editingId==id) resetForm(); loadAgents(); }
+
+async function loadAgents(){
+  const j=await (await fetch('/api/agents')).json();
+  document.getElementById('rows').innerHTML=(j.agents||[]).map(m=>{
+    const ims=(m.image_models||[]).map(x=>`<span class="pill">${esc(x.name)} ${x.steps}步/次</span>`).join('');
+    const deep=m.deep_think?'<span class="tag-deep">深度思考</span>':'<span class="pill">标准</span>';
+    const styleLabel={on_demand:'按需执行',creative:'创意脑洞',cinematic:'电影大片'}[m.style||'on_demand']||'按需执行';
+    return `<tr data-id="${m.id}"><td>${m.id}</td><td>${esc(m.name)}</td><td><code>${esc(m.call_name)}</code></td><td>${m.base_model_id}</td><td>${m.max_steps}</td><td>${ims}</td><td>${deep}<br><span class="pill">${styleLabel}</span></td><td><button class="edit" onclick="edit(${m.id})">编辑</button><button class="del" onclick="del(${m.id})">删除</button></td></tr>`;
+  }).join('')||'<tr><td colspan="8" style="color:#7d93bd">暂无</td></tr>';
+}
+
+function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+const name_=document.getElementById('name'); const call_name_=document.getElementById('call_name');
+const base_model_id=document.getElementById('base_model_id'); const max_steps=document.getElementById('max_steps');
+const prompt_=document.getElementById('prompt'); const err_=document.getElementById('err');
+const ok_=document.getElementById('ok');
+async function logout(){ try{ localStorage.removeItem('vix_sid'); }catch(e){} await fetch('/api/logout',{method:'POST'}); location.href='/login'; }
+loadUp(); loadAgents();
+</script>
+</body>
+</html>
