@@ -511,7 +511,9 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if len(ks) > 0 {
-				s.cfg.APIKeys = ks
+				// 界面回显的是掩码值（如 vix-****0001）：凡是掩码与现存 key 匹配的，
+				// 一律还原成真实 key，避免「保存配置」把密钥写成掩码导致鉴权失效。
+				s.cfg.APIKeys = restoreMaskedKeys(s.cfg.APIKeys, ks)
 			}
 		}
 		if v, ok := b["python_bin"].(string); ok && v != "" {
@@ -825,6 +827,24 @@ func maskKeys(keys []string) []string {
 			continue
 		}
 		out = append(out, k[:4]+"****"+k[len(k)-4:])
+	}
+	return out
+}
+
+// restoreMaskedKeys 把提交上来的掩码值还原为真实密钥：
+// 若某个提交值与现存密钥的掩码完全一致，就沿用原密钥；否则视为新增的明文密钥。
+// 这样「保存配置」不会把界面上显示的掩码写回配置、把 API 鉴权改坏。
+func restoreMaskedKeys(current []string, submitted []string) []string {
+	out := make([]string, 0, len(submitted))
+	for _, s := range submitted {
+		restored := s
+		for _, c := range current {
+			if maskKeys([]string{c})[0] == s {
+				restored = c
+				break
+			}
+		}
+		out = append(out, restored)
 	}
 	return out
 }

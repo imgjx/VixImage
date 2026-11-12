@@ -130,3 +130,25 @@ func TestSessionExpiry(t *testing.T) {
 		t.Fatal("过期会话仍被视为有效")
 	}
 }
+
+// 保存配置时回显的是掩码值，不能把掩码写回配置把 API 鉴权改坏。
+func TestRestoreMaskedKeys(t *testing.T) {
+	real := []string{"vix-sk-default-0001", "short"}
+	// 界面回显的掩码值
+	sub := []string{"vix-****0001", "******"}
+	out := restoreMaskedKeys(real, sub)
+	if len(out) != 2 {
+		t.Fatalf("长度不对: %v", out)
+	}
+	if out[0] != "vix-sk-default-0001" {
+		t.Fatalf("掩码未还原: %q", out[0])
+	}
+	if out[1] != "short" {
+		t.Fatalf("短密钥掩码未还原: %q", out[1])
+	}
+	// 新增的明文密钥原样保留。
+	out2 := restoreMaskedKeys(real, []string{"vix-****0001", "brand-new-key"})
+	if out2[1] != "brand-new-key" {
+		t.Fatalf("新增密钥被改动: %q", out2[1])
+	}
+}
