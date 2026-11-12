@@ -50,27 +50,46 @@ func StyleLabel(s string) string {
 
 // UpstreamModel is a registered upstream image/LLM model.
 // Only multimodal-capable models are allowed.
+//
+// LLM 与图片模型各有专属字段（exclusive fields）：
+//   - LLM 专属：MaxTokens / Temperature / TopP / SystemPrompt
+//   - 图片模型专属：Size / Sizes / N / Steps / NegativePrompt / AgentDesc
+// 专属字段只对对应类型生效，避免把图片参数填给 LLM 造成误配。
 type UpstreamModel struct {
-	ID         int64     `json:"id"`
-	Name       string    `json:"name"`       // display name
-	Type       ModelType `json:"type"`       // image | llm
-	Format     APIFormat `json:"format"`     // openai | agnes | openai_chat
-	BaseURL    string    `json:"base_url"`   // e.g. https://api.agnes-ai.cn
-	APIKey     string    `json:"api_key"`    // secret (stored as-is; masked on read)
-	ModelName  string    `json:"model_name"` // upstream model id, e.g. agnes-image-2.5-flash
-	Size       string    `json:"size"`       // default size, e.g. 1024x1024
-	Sizes      []string  `json:"sizes"`      // 支持的多种尺寸（空则不限制）
-	N          int       `json:"n"`          // images per call
-	Multimodal bool      `json:"multimodal"` // must be true
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`       // display name
+	Type      ModelType `json:"type"`       // image | llm
+	Format    APIFormat `json:"format"`     // openai | agnes | openai_chat
+	BaseURL   string    `json:"base_url"`   // e.g. https://api.agnes-ai.cn
+	APIKey    string    `json:"api_key"`    // secret (stored as-is; masked on read)
+	ModelName string    `json:"model_name"` // upstream model id, e.g. agnes-image-2.5-flash
+
+	// ---- 图片模型专属字段（Type == image 生效）----
+	Size       string   `json:"size"`   // 默认尺寸, e.g. 1024x1024
+	Sizes      []string `json:"sizes"`  // 支持的多种尺寸（空则不限制）
+	N          int      `json:"n"`      // images per call
+	Steps      int      `json:"steps"`  // 该引擎每次生成一张图消耗的步数（成本）
+	// NegativePrompt 是反向提示词（部分上游支持），仅图片模型生效。
+	NegativePrompt string `json:"negative_prompt"`
 	// AgentDesc 是给 agent 看的「引擎介绍」：说明这个引擎擅长什么风格/
-	// 题材，规划器据此对症选择图片模型。
+	// 题材，规划器据此对症选择图片模型。仅图片模型生效。
 	AgentDesc string `json:"agent_desc"`
+
+	// ---- LLM 专属字段（Type == llm 生效）----
 	// MaxTokens 是 LLM 单次输出上限（小上下文模型尤其需要）。
 	// 0 = 使用内置默认；Chat 请求会把它注入 max_tokens。
-	MaxTokens int       `json:"max_tokens"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	MaxTokens int `json:"max_tokens"`
+	// Temperature / TopP 控制采样；0 表示不注入该参数（走上游默认）。
+	Temperature float64 `json:"temperature"`
+	TopP        float64 `json:"top_p"`
+	// SystemPrompt 是该 LLM 的系统提示词前缀（与 agent 提示词拼接）。
+	SystemPrompt string `json:"system_prompt"`
+
+	// Multimodal 为 true 才允许注册 LLM（必须是多模态/视觉模型）。
+	Multimodal bool      `json:"multimodal"`
+	Enabled    bool      `json:"enabled"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // MaskKey returns the model with the api key masked for safe JSON exposure.

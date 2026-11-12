@@ -31,15 +31,24 @@ func (s *Service) Save(m *model.UpstreamModel) error {
 	if m.Type != model.TypeImage && m.Type != model.TypeLLM {
 		return fmt.Errorf("type must be 'image' or 'llm'")
 	}
-	if m.N <= 0 {
-		m.N = 1
-	}
 	if m.Type == model.TypeImage {
 		// image generation models always produce multimodal output
 		m.Multimodal = true
 		if m.Format == "" {
 			m.Format = model.FormatOpenAI
 		}
+		// 图片模型专属：尺寸/张数/步数/反向提示词/引擎介绍。
+		if m.N <= 0 {
+			m.N = 1
+		}
+		if m.Steps <= 0 {
+			m.Steps = 30 // 默认：每生成一张图消耗 30 步（可在「我的模型」里覆盖）
+		}
+		// LLM 专属字段对图片模型一律无效，直接清零避免误配。
+		m.MaxTokens = 0
+		m.Temperature = 0
+		m.TopP = 0
+		m.SystemPrompt = ""
 	}
 	if m.Type == model.TypeLLM {
 		if !m.Multimodal {
@@ -55,6 +64,19 @@ func (s *Service) Save(m *model.UpstreamModel) error {
 		if m.MaxTokens > 32000 {
 			return fmt.Errorf("max_tokens 过大（上限 32000）")
 		}
+		if m.Temperature < 0 || m.Temperature > 2 {
+			return fmt.Errorf("temperature 需在 0~2 之间")
+		}
+		if m.TopP < 0 || m.TopP > 1 {
+			return fmt.Errorf("top_p 需在 0~1 之间")
+		}
+		// 图片模型专属字段对 LLM 一律无效（LLM 不谈宽度/尺寸/张数），清空。
+		m.Size = ""
+		m.Sizes = nil
+		m.N = 0
+		m.Steps = 0
+		m.NegativePrompt = ""
+		m.AgentDesc = ""
 	}
 	// 多尺寸列表：清除空项；默认尺寸若不在列表里则自动补上。
 	clean := make([]string, 0, len(m.Sizes))

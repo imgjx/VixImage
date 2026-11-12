@@ -256,6 +256,14 @@ func orStr(s, def string) string {
 	return s
 }
 
+// orFloat 返回 v；v<=0 时返回缺省值 def（0 表示「未配置，用内置默认」）。
+func orFloat(v, def float64) float64 {
+	if v <= 0 {
+		return def
+	}
+	return v
+}
+
 // planner 驱动每轮的基座大模型决策。
 type planner struct {
 	cli     *client.Client
@@ -270,7 +278,8 @@ func (p *planner) decide(base model.UpstreamModel, sys string, parts []client.Ch
 			{Role: "system", Content: sys},
 			{Role: "user", Content: parts},
 		},
-		Temp: 0.5,
+		// 采样温度：模型配置里设了 temperature 就用它，否则用内置 0.5（规划要稳）。
+		Temp: orFloat(base.Temperature, 0.5),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("大模型调用失败: %w", err)

@@ -38,7 +38,7 @@ func (brokenCache) Del(string) error                        { return nil }
 // 测试：磁盘缓存完全不可用时，登录成功后仍能进入控制台（不会被弹回登录页）。
 func TestLoginWorksWhenCacheBroken(t *testing.T) {
 	cfg := testConfig()
-	s := New(cfg, nil, nil, nil, brokenCache{})
+	s := New(cfg, nil, nil, nil, nil, brokenCache{})
 	s.sessions = newSessionStore()
 	h := s.Handler()
 	srv := httptest.NewServer(h)

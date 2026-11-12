@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"viximage/internal/agent"
 	"viximage/internal/agentmodel"
 	"viximage/internal/client"
 	"viximage/internal/config"
@@ -32,6 +33,7 @@ type Server struct {
 	store  storage.Storage
 	up     *upstream.Service
 	agents *agentmodel.Service
+	rt     *agent.Runtime
 	cache  Cache
 	pages  fs.FS
 	// sessions 是内存会话表。GUI 会话只属于本进程，用内存最稳：
@@ -47,8 +49,8 @@ type Cache interface {
 	Del(key string) error
 }
 
-func New(cfg *config.Config, store storage.Storage, up *upstream.Service, ag *agentmodel.Service, cch cacheLike) *Server {
-	return &Server{cfg: cfg, store: store, up: up, agents: ag, cache: cch, sessions: newSessionStore()}
+func New(cfg *config.Config, store storage.Storage, up *upstream.Service, ag *agentmodel.Service, rt *agent.Runtime, cch cacheLike) *Server {
+	return &Server{cfg: cfg, store: store, up: up, agents: ag, rt: rt, cache: cch, sessions: newSessionStore()}
 }
 
 // cacheLike is satisfied by the cache.Cache implementation.
@@ -89,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/user", s.auth(s.apiUser))
 	// playground
 	mux.HandleFunc("/api/playground", s.auth(s.apiPlayground))
+	mux.HandleFunc("/api/playground/agent", s.auth(s.apiPlaygroundAgent))
 	mux.HandleFunc("/files/", s.auth(s.serveFile))
 	return mux
 }
@@ -658,6 +661,113 @@ func (s *Server) apiPlayground(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "images": urls})
+}
+
+// ---------------- Playground（测「我的模型」）----------------
+
+// apiPlaygroundAgent 用「我的模型」(AgentModel) 跑完整的 Agent 自循环链路：
+// 基座 LLM 规划 → 生图 → 渲染 → 审片 → 交付。参考图作为用户参考图进入产物表。
+// 支持 multipart（含多张参考图）与 JSON 两种提交方式。
+func (s *Server) apiPlaygroundAgent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]any{"error": "method not allowed"})
+		return
+	}
+	var agentID int64
+	var prompt, size string
+	var deep bool
+	var refs []string
+
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "multipart/") {
+		_ = r.ParseMultipartForm(128 << 20)
+		agentID = atoi64(r.FormValue("agent_id"))
+		prompt = r.FormValue("prompt")
+		size = r.FormValue("size")
+		deep = r.FormValue("deep_think") == "1" || r.FormValue("deep_think") == "true"
+		for _, fh := range r.MultipartForm.File["refs"] {
+			f, err := fh.Open()
+			if err != nil {
+				continue
+			}
+			_ = os.MkdirAll(filepath.Join(s.cfg.DataDir, "uploads"), 0o755)
+			dst := filepath.Join(s.cfg.DataDir, "uploads", fmt.Sprintf("pg_ref_%d_%s", time.Now().UnixNano(), config.SafeFileName(fh.Filename)))
+			if out, err := os.Create(dst); err == nil {
+				_, _ = io.Copy(out, f)
+				out.Close()
+				refs = append(refs, dst)
+			}
+			f.Close()
+		}
+	} else {
+		var b struct {
+			AgentID int64  `json:"agent_id"`
+			Prompt  string `json:"prompt"`
+			Size    string `json:"size"`
+			Deep    bool   `json:"deep_think"`
+			Refs    []string `json:"refs"` // 本地路径 / url
+		}
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			writeJSON(w, 400, map[string]any{"error": "bad json"})
+			return
+		}
+		agentID, prompt, size, deep = b.AgentID, b.Prompt, b.Size, b.Deep
+		refs = b.Refs
+	}
+	if agentID == 0 || strings.TrimSpace(prompt) == "" {
+		writeJSON(w, 400, map[string]any{"error": "agent_id 与 prompt 必填"})
+		return
+	}
+	am, err := s.agents.Get(agentID)
+	if err != nil || am == nil {
+		writeJSON(w, 400, map[string]any{"error": "我的模型不存在"})
+		return
+	}
+	// 参考图落到本地（http url 先下载）。
+	inputs := []string{}
+	for _, ref := range refs {
+		if ref == "" {
+			continue
+		}
+		if strings.HasPrefix(ref, "http") {
+			dst := filepath.Join(s.cfg.DataDir, "uploads", fmt.Sprintf("pg_ref_%d_img", time.Now().UnixNano()))
+			if downloadToFile(ref, dst) == nil {
+				inputs = append(inputs, dst)
+			}
+			continue
+		}
+		inputs = append(inputs, ref)
+	}
+	res, err := s.rt.Run(agent.RunRequest{
+		AgentCallName: am.CallName,
+		Prompt:        prompt,
+		InputImages:   inputs,
+		APIKeyMask:    "gui",
+		DeepThink:     deep,
+		Size:          size,
+		Trace:         true,
+	})
+	if err != nil {
+		body := map[string]any{"ok": false, "error": err.Error()}
+		if res != nil {
+			body["log"] = res.Log
+			body["steps_used"] = res.StepsUsed
+			body["theme"] = res.Theme
+			body["trace"] = res.Trace
+		}
+		writeJSON(w, 502, body)
+		return
+	}
+	urls := make([]string, 0, len(res.OutputImages))
+	for _, p := range res.OutputImages {
+		urls = append(urls, "/files/"+filepath.Base(p))
+	}
+	writeJSON(w, 200, map[string]any{
+		"ok": true, "images": urls, "status": res.Status,
+		"steps_used": res.StepsUsed, "llm_calls": res.LLMCalls,
+		"theme": res.Theme, "style": res.Style, "deep_think": res.DeepThink,
+		"reasoning": res.Reasoning, "log": res.Log, "trace": res.Trace,
+	})
 }
 
 // serveFile 提供成品的静态访问。

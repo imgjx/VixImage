@@ -84,7 +84,7 @@ func main() {
 
 	go func() {
 		log.Printf("GUI  控制台 启动: http://localhost:%d  (账号 %s)\n", cfg.GUIPort, cfg.GUIUser)
-		s := gui.New(cfg, store, up, ag, cch)
+		s := gui.New(cfg, store, up, ag, rt, cch)
 		if err := s.Start(); err != nil {
 			log.Println("GUI 启动失败:", err)
 		}

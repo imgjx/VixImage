@@ -102,6 +102,10 @@ func (c *Client) GenerateImage(req ImageRequest) (*ImageResult, error) {
 		}
 		body["image"] = ref // OpenAI/Agnes 兼容 i2i 字段
 	}
+	// 反向提示词（图片模型专属）：留空则不发送该字段，避免上游因未知字段报错。
+	if np := strings.TrimSpace(req.Model.NegativePrompt); np != "" {
+		body["negative_prompt"] = np
+	}
 	for k, v := range req.Extra {
 		body[k] = v
 	}
@@ -210,6 +214,14 @@ func (c *Client) Chat(req ChatRequest) (string, error) {
 			mt = 2400 // 内置缺省上限，避免小上下文模型被撑爆
 		}
 		body["max_tokens"] = mt
+	}
+	// top_p：LLM 专属字段，0 = 不注入（走上游默认）。
+	if _, set := body["top_p"]; !set && req.Model.TopP > 0 {
+		body["top_p"] = req.Model.TopP
+	}
+	// system：模型自带的系统提示词前缀（LLM 专属）。
+	if _, set := body["system"]; !set && strings.TrimSpace(req.Model.SystemPrompt) != "" {
+		body["system"] = req.Model.SystemPrompt
 	}
 	endpoint := chatEndpoint(req.Model.BaseURL)
 	data, err := c.postJSON(endpoint, req.Model.APIKey, body)

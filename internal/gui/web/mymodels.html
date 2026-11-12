@@ -116,8 +116,14 @@ async function loadUp(){
 function addImRow(upstreamId, steps){
   const img=window.imgModels||[];
   const sel=img.map(m=>`<option value="${m.id}" ${m.id==upstreamId?'selected':''}>${esc(m.name)}</option>`).join('')||'<option value="0">（请先添加图片模型）</option>';
+  // 步数缺省取该图片模型自己配置的「单次生图消耗步数」，未配置则 30。
+  let st = steps;
+  if(!st){
+    const m = img.find(x=>String(x.id)===String(upstreamId)) || img[0];
+    st = (m && m.steps) ? m.steps : 30;
+  }
   const d=document.createElement('div'); d.className='im-row';
-  d.innerHTML=`<select class="imm">${sel}</select><input class="ims" type="number" value="${steps||30}" min="1" title="单次生图消耗步数"><button onclick="this.parentNode.remove()">×</button>`;
+  d.innerHTML=`<select class="imm">${sel}</select><input class="ims" type="number" value="${st}" min="1" title="单次生图消耗步数"><button onclick="this.parentNode.remove()">×</button>`;
   document.getElementById('imlist').appendChild(d);
 }
 

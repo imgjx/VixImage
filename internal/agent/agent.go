@@ -205,6 +205,10 @@ func (r *Runtime) Run(req RunRequest) (*RunResult, error) {
 	// 便于上游 prompt cache 命中；动态开关(深度思考/强制自检)一律放 user 消息，不污染前缀。
 	withLearning := model.LearningEnabled(am.Learning)
 	sys := systemPrompt(withLearning)
+	// 基座 LLM 自带的系统提示词前缀（LLM 专属字段）拼在最前面。
+	if sp := strings.TrimSpace(base.SystemPrompt); sp != "" {
+		sys = sp + "\n\n" + sys
+	}
 
 	logFn("[启动] 自循环 Agent ｜ 基座 %s ｜ 风格 %s ｜ 总步数 %d ｜ 耗尽策略 %s ｜ 引擎 %d ｜ 学习数据 %s",
 		base.ModelName, model.StyleLabel(style), budget, exhaust, len(engines), map[bool]string{true: "开", false: "关"}[withLearning])

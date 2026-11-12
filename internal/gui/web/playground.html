@@ -15,20 +15,30 @@
   .nav a:hover, .nav a.on { background:#1b2b4a; color:#fff; }
   .right { margin-left:auto; font-size:13px; color:#7d93bd; }
   .right button { background:#22324f; border:0; color:#cfe0ff; padding:7px 12px; border-radius:8px; cursor:pointer; }
-  .wrap { padding:26px; max-width:1200px; margin:0 auto; display:grid; grid-template-columns:420px 1fr; gap:20px; }
+  .wrap { padding:26px; max-width:1240px; margin:0 auto; display:grid; grid-template-columns:420px 1fr; gap:20px; }
   .box { background:#101a30; border:1px solid #243a63; border-radius:14px; padding:18px; }
   h3 { margin:0 0 14px; font-size:15px; color:#9ec5ff; }
   label { display:block; font-size:12px; color:#8fb2e6; margin:10px 0 5px; }
   input,select,textarea { width:100%; padding:9px 11px; border-radius:8px; border:1px solid #2c4470; background:#0c1426; color:#e8eefc; font-size:13px; box-sizing:border-box; }
   textarea { resize:vertical; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   button.go { margin-top:16px; width:100%; padding:12px; border:0; border-radius:9px; cursor:pointer; background:linear-gradient(90deg,#3b82f6,#7c3aed); color:#fff; font-weight:600; font-size:14px; }
   button.go:disabled { opacity:.55; cursor:wait; }
   .err { color:#ff7b7b; font-size:12px; margin-top:8px; min-height:14px; }
   .hint { font-size:11px; color:#6f86b0; margin-top:4px; line-height:1.5; }
-  .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
+  .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px; }
   .gallery img { width:100%; border-radius:10px; border:1px solid #243a63; display:block; }
   .gallery a { color:#9ec5ff; font-size:12px; word-break:break-all; }
   .preset { display:inline-block; padding:4px 10px; margin:0 6px 6px 0; border-radius:7px; background:#1b2b4a; color:#9ec5ff; font-size:12px; cursor:pointer; border:0; }
+  .pill { padding:2px 8px; border-radius:6px; background:#1b2b4a; font-size:12px; display:inline-block; margin:3px 4px 0 0; }
+  .pill.img { background:#1f3a5c; color:#9ec5ff; }
+  .pill.llm { background:#3b2a6b; color:#c4b5fd; }
+  .meta { font-size:12px; color:#8fb2e6; margin-bottom:12px; line-height:1.7; }
+  .log { margin-top:16px; background:#0c1426; border:1px solid #243a63; border-radius:10px; padding:12px; max-height:340px; overflow:auto; font-size:12px; color:#a9c0e6; white-space:pre-wrap; line-height:1.6; }
+  .log b { color:#9ec5ff; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; }
+  .tabs button { background:#1b2b4a; color:#9ec5ff; border:0; padding:6px 14px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .tabs button.on { background:#7c3aed; color:#fff; }
 </style>
 </head>
 <body>
@@ -45,71 +55,95 @@
   </div>
   <div class="wrap">
     <div class="box">
-      <h3>直接试玩上游生图</h3>
-      <label>图片模型</label><select id="model_id"></select>
-      <div class="hint" id="engine_desc"></div>
-      <label>提示词</label><textarea id="prompt" rows="5" placeholder="描述你想要的画面…"></textarea>
+      <h3>试玩「我的模型」</h3>
+      <div class="hint" style="margin-bottom:10px;">完整跑一遍 Agent 自循环：基座大模型规划 → 生图 → 渲染 → 审片 → 交付成片。</div>
+      <label>我的模型（Agent）</label><select id="agent_id"></select>
+      <div class="meta" id="agent_meta"></div>
+      <label>提示词（要什么画面）</label><textarea id="prompt" rows="5" placeholder="描述你想要的画面…"></textarea>
       <div>
         <button class="preset" onclick="quick('电影级科幻海报，巨型机甲剪影，霓虹雨夜，体积光')">科幻机甲</button>
         <button class="preset" onclick="quick('治愈系插画，小猫在窗台晒太阳，暖色调，胶片质感')">治愈小猫</button>
         <button class="preset" onclick="quick('产品摄影，香水瓶特写，纯色背景，柔和布光')">产品图</button>
       </div>
-      <div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label>尺寸（留空用默认）</label><input id="size" placeholder="1024x1024"></div>
-        <div><label>张数</label><input id="n" type="number" value="1" min="1" max="4"></div>
+      <div class="row2" style="margin-top:6px">
+        <div><label>强制尺寸（留空用默认）</label><input id="size" placeholder="1280x720"></div>
+        <div><label>&nbsp;</label><label class="chk" style="margin-top:4px"><input type="checkbox" id="deep_think"><span>深度思考</span></label></div>
       </div>
-      <div class="hint" id="sizes_hint"></div>
-      <label>参考图（可选，图生图）</label><input id="ref" type="file" accept="image/*">
+      <label>参考图（可选，可多选，作为用户参考图进入产物表）</label>
+      <input id="refs" type="file" accept="image/*" multiple>
       <button class="go" id="goBtn" onclick="run()">生成</button>
       <div class="err" id="err"></div>
     </div>
     <div class="box">
       <h3>生成结果</h3>
+      <div class="meta" id="stat"></div>
       <div class="gallery" id="gallery"><span style="color:#7d93bd;font-size:13px">还没有生成过图片。</span></div>
+      <div class="tabs" style="margin-top:16px">
+        <button id="tabLog" class="on" onclick="switchTab('log')">运行日志</button>
+        <button id="tabTrace" onclick="switchTab('trace')">每步思考</button>
+      </div>
+      <div class="log" id="logBox">（还没有运行记录）</div>
     </div>
   </div>
 <script src="/session.js"></script>
 <script>
-let models=[];
+let agents=[]; let lastLog=[]; let lastTrace=[];
 async function load(){
-  const j=await (await fetch('/api/upstream')).json();
-  models=(j.upstream||[]).filter(m=>m.type==='image'&&m.enabled);
-  document.getElementById('model_id').innerHTML=models.map(m=>`<option value="${m.id}">${esc(m.name)} (${esc(m.model_name)})</option>`).join('')||'<option value="0">（请先在上游模型添加图片模型）</option>';
-  syncModel();
+  const j=await (await fetch('/api/agents')).json();
+  agents=(j.agents||[]).filter(a=>a.enabled!==false);
+  const sel=document.getElementById('agent_id');
+  sel.innerHTML=agents.map(a=>`<option value="${a.id}">${esc(a.name)}（${esc(a.call_name)}）</option>`).join('')||'<option value="0">（请先在「我的模型」里创建一个 Agent）</option>';
+  syncAgent();
 }
-function syncModel(){
-  const m=models.find(x=>String(x.id)===document.getElementById('model_id').value);
-  if(!m) return;
-  document.getElementById('engine_desc').textContent=m.agent_desc?('引擎介绍：'+m.agent_desc):'（未填写引擎介绍，可在上游模型页配置）';
-  document.getElementById('sizes_hint').textContent=m.sizes&&m.sizes.length?('支持尺寸：'+m.sizes.join(' / ')):'';
+function syncAgent(){
+  const a=agents.find(x=>String(x.id)===document.getElementById('agent_id').value);
+  const box=document.getElementById('agent_meta');
+  if(!a){ box.innerHTML=''; return; }
+  const styleLabel={on_demand:'按需执行',creative:'创意脑洞',cinematic:'电影大片'}[a.style||'on_demand']||'按需执行';
+  const ims=(a.image_models||[]).map(x=>`<span class="pill img">${esc(x.name||x.upstream_id)} ${x.steps||30}步/次</span>`).join('');
+  box.innerHTML=`调用名 <b>${esc(a.call_name)}</b> ｜ 总步数 ${a.max_steps} ｜ 风格 ${styleLabel}<br>图片引擎：${ims||'（未配置）'}`;
 }
 function quick(t){ document.getElementById('prompt').value=t; }
+function switchTab(k){
+  const isLog=k==='log';
+  document.getElementById('tabLog').classList.toggle('on',isLog);
+  document.getElementById('tabTrace').classList.toggle('on',!isLog);
+  const box=document.getElementById('logBox');
+  if(isLog) box.textContent = lastLog.length? lastLog.join('\n') : '（还没有运行记录）';
+  else box.textContent = lastTrace.length? lastTrace.map(t=>`第 ${t.step} 步：${t.think||''}`+(t.ops?`  [${t.ops}]`:'')).join('\n') : '（还没有思考轨迹）';
+}
 async function run(){
   const btn=document.getElementById('goBtn');
-  btn.disabled=true; btn.textContent='生成中…';
+  btn.disabled=true; btn.textContent='运行中…';
   document.getElementById('err').textContent='';
+  document.getElementById('stat').textContent='';
   const fd=new FormData();
-  fd.append('model_id',document.getElementById('model_id').value);
+  fd.append('agent_id',document.getElementById('agent_id').value);
   fd.append('prompt',document.getElementById('prompt').value);
   fd.append('size',document.getElementById('size').value);
-  fd.append('n',document.getElementById('n').value||'1');
-  const rf=document.getElementById('ref').files[0];
-  if(rf) fd.append('ref',rf);
-  const r=await fetch('/api/playground',{method:'POST',body:fd});
-  const j=await r.json().catch(()=>({}));
+  fd.append('deep_think',document.getElementById('deep_think').checked?'1':'0');
+  for(const f of document.getElementById('refs').files) fd.append('refs',f);
+  let j={};
+  try{
+    const r=await fetch('/api/playground/agent',{method:'POST',body:fd});
+    j=await r.json().catch(()=>({}));
+  }catch(e){ document.getElementById('err').textContent='请求失败：'+e.message; }
   btn.disabled=false; btn.textContent='生成';
-  if(r.ok&&j.ok){
-    const g=document.getElementById('gallery');
-    if(g.querySelector('span')) g.innerHTML='';
-    for(const u of (j.images||[])){
-      const d=document.createElement('div');
-      d.innerHTML=`<img src="${u}" loading="lazy"><a href="${u}" target="_blank">${u}</a>`;
-      g.prepend(d);
-    }
-  } else document.getElementById('err').textContent=j.error||'生成失败';
+  lastLog=j.log||[]; lastTrace=j.trace||[];
+  switchTab(document.getElementById('tabLog').classList.contains('on')?'log':'trace');
+  if(j.error){ document.getElementById('err').textContent=j.error; if(lastLog.length) switchTab('log'); return; }
+  const g=document.getElementById('gallery');
+  g.innerHTML='';
+  for(const u of (j.images||[])){
+    const d=document.createElement('div');
+    d.innerHTML=`<img src="${u}" loading="lazy"><a href="${u}" target="_blank">${u}</a>`;
+    g.appendChild(d);
+  }
+  if(!(j.images||[]).length) g.innerHTML='<span style="color:#7d93bd;font-size:13px">本次没有产出图片。</span>';
+  document.getElementById('stat').innerHTML=`状态 <b>${esc(j.status||'')}</b> ｜ 步数 ${j.steps_used||0} ｜ 大模型请求 ${j.llm_calls||0} 次 ｜ 主题 ${esc(j.theme||'—')}`;
 }
-document.getElementById('model_id').addEventListener('change',syncModel);
-function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+document.getElementById('agent_id').addEventListener('change',syncAgent);
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function logout(){ try{ localStorage.removeItem('vix_sid'); }catch(e){} await fetch('/api/logout',{method:'POST'}); location.href='/login'; }
 load();
 </script>

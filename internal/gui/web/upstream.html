@@ -15,23 +15,29 @@
   .nav a:hover, .nav a.on { background:#1b2b4a; color:#fff; }
   .right { margin-left:auto; font-size:13px; color:#7d93bd; }
   .right button { background:#22324f; border:0; color:#cfe0ff; padding:7px 12px; border-radius:8px; cursor:pointer; }
-  .wrap { padding:26px; max-width:1200px; margin:0 auto; display:grid; grid-template-columns:380px 1fr; gap:20px; }
+  .wrap { padding:26px; max-width:1200px; margin:0 auto; display:grid; grid-template-columns:400px 1fr; gap:20px; }
   .box { background:#101a30; border:1px solid #243a63; border-radius:14px; padding:18px; }
   h3 { margin:0 0 14px; font-size:15px; color:#9ec5ff; }
   label { display:block; font-size:12px; color:#8fb2e6; margin:10px 0 5px; }
   input,select,textarea { width:100%; padding:9px 11px; border-radius:8px; border:1px solid #2c4470; background:#0c1426; color:#e8eefc; font-size:13px; box-sizing:border-box; }
+  textarea { resize:vertical; }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   label.chk { display:inline-block; font-size:13px; color:#cdd9f0; margin-top:12px;
-             margin-bottom:0; line-height:1.5; white-space:normal; }
-  label.chk input { margin-right:8px; vertical-align:middle; }
+             margin-bottom:0; line-height:1.6; white-space:normal; }
+  label.chk input { width:auto; margin-right:8px; vertical-align:middle; }
   label.chk span { display:inline; }
   button.add { margin-top:16px; width:100%; padding:11px; border:0; border-radius:9px; cursor:pointer; background:linear-gradient(90deg,#3b82f6,#7c3aed); color:#fff; font-weight:600; }
   .err { color:#ff7b7b; font-size:12px; margin-top:8px; min-height:14px; }
+  .hint { font-size:11px; color:#6f86b0; margin-top:4px; line-height:1.5; }
+  .group-title { font-size:12px; color:#7c3aed; letter-spacing:1px; margin:16px 0 2px; padding-top:10px; border-top:1px dashed #243a63; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
-  th,td { padding:9px 10px; text-align:left; border-bottom:1px solid #1c2c4a; }
+  th,td { padding:9px 10px; text-align:left; border-bottom:1px solid #1c2c4a; vertical-align:top; }
   th { color:#9ec5ff; }
   .del { background:#3a1414; color:#ff7b7b; border:0; padding:5px 10px; border-radius:6px; cursor:pointer; }
-  .pill { padding:2px 8px; border-radius:6px; background:#1b2b4a; font-size:12px; }
+  .pill { padding:2px 8px; border-radius:6px; background:#1b2b4a; font-size:12px; display:inline-block; margin:2px 3px 2px 0; }
+  .pill.img { background:#1f3a5c; color:#9ec5ff; }
+  .pill.llm { background:#3b2a6b; color:#c4b5fd; }
+  .hide { display:none !important; }
 </style>
 </head>
 <body>
@@ -51,7 +57,11 @@
       <h3>添加上游模型</h3>
       <label>名称</label><input id="name">
       <label>类型</label>
-      <select id="type"><option value="image">图片模型</option><option value="llm">大模型(LLM)</option></select>
+      <select id="type">
+        <option value="image">图片模型（生图引擎）</option>
+        <option value="llm">大模型 LLM（Agent 基座）</option>
+      </select>
+      <div class="hint">切换类型后只显示该类型的专属字段：图片模型管尺寸/张数/步数，大模型管 token 与采样参数。</div>
       <label>API 格式</label>
       <select id="format">
         <option value="openai">OpenAI 兼容 (images/generations)</option>
@@ -61,16 +71,39 @@
       <label>Base URL</label><input id="base_url" placeholder="https://api.example.com">
       <label>API Key</label><input id="api_key" type="password">
       <label>模型名 (model_name)</label><input id="model_name" placeholder="agnes-image-2.5-flash">
-      <div class="row2">
-        <div><label>默认尺寸</label><input id="size" placeholder="1024x1024"></div>
-        <div><label>数量 n</label><input id="n" type="number" value="1"></div>
+
+      <!-- 图片模型专属字段 -->
+      <div id="g_image">
+        <div class="group-title">图片模型专属</div>
+        <div class="row2">
+          <div><label>默认尺寸</label><input id="size" placeholder="1024x1024"></div>
+          <div><label>每次生成张数 n</label><input id="n" type="number" value="1" min="1"></div>
+        </div>
+        <label>支持的多尺寸（逗号分隔，如 1024x1024,1280x720,720x1280）</label>
+        <input id="sizes" placeholder="留空则不限制尺寸">
+        <label>单次生图消耗步数</label><input id="steps" type="number" value="30" min="1">
+        <div class="hint">Agent 每生成一张图从总步数里扣这个数（可在「我的模型」里按引擎单独覆盖）。</div>
+        <label>反向提示词（可选）</label><input id="negative_prompt" placeholder="留空则不发送该参数">
+        <label>对 Agent 的介绍（Agent 据此对症选择引擎，如「擅长赛博朋克人像、夜景色调」）</label>
+        <textarea id="agent_desc" rows="2" placeholder="可选，写给规划器看的引擎特长说明"></textarea>
       </div>
-      <label>支持的多尺寸（逗号分隔，如 1024x1024,1280x720,720x1280）</label><input id="sizes" placeholder="留空则不限制尺寸">
-      <label>对 Agent 的介绍（Agent 据此对症选择引擎，如「擅长赛博朋克人像、夜景色调」）</label>
-      <textarea id="agent_desc" rows="2" placeholder="可选，写给规划器看的引擎特长说明"></textarea>
-      <label>最大输出 Token（LLM，小上下文模型务必设置）</label><input id="max_tokens" type="number" value="2400" placeholder="2400">
-      <div class="hint" style="font-size:11px;color:#6f86b0;margin-top:4px;">LLM 单次回复的 max_tokens 上限；图片模型可忽略。0 或留空用内置缺省 2400。</div>
-      <label class="chk"><input type="checkbox" id="multimodal" checked><span>多模态(视觉) —— 大模型必须勾选</span></label>
+
+      <!-- 大模型专属字段 -->
+      <div id="g_llm" class="hide">
+        <div class="group-title">大模型专属</div>
+        <label>最大输出 Token（max_tokens）</label>
+        <input id="max_tokens" type="number" value="2400" min="0" placeholder="2400">
+        <div class="hint">LLM 单次回复上限；小上下文模型务必设置。0 或留空用内置缺省 2400，上限 32000。</div>
+        <div class="row2">
+          <div><label>温度 temperature</label><input id="temperature" type="number" step="0.1" min="0" max="2" placeholder="0.5"></div>
+          <div><label>top_p</label><input id="top_p" type="number" step="0.05" min="0" max="1" placeholder="留空=上游默认"></div>
+        </div>
+        <div class="hint">0 / 留空表示不注入该参数，走上游默认。</div>
+        <label>系统提示词前缀（可选）</label>
+        <textarea id="system_prompt" rows="2" placeholder="可选：拼在 Agent 主提示词最前面的固定前缀"></textarea>
+      </div>
+
+      <label class="chk" id="row_multimodal"><input type="checkbox" id="multimodal" checked><span>多模态(视觉) —— 大模型必须勾选</span></label>
       <br>
       <label class="chk"><input type="checkbox" id="enabled" checked><span>启用</span></label>
       <button class="add" onclick="add()">添加模型</button>
@@ -79,44 +112,81 @@
     <div class="box">
       <h3>已配置上游模型</h3>
       <table>
-        <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>格式</th><th>模型名</th><th>尺寸</th><th>maxTok</th><th>多模态</th><th></th></tr></thead>
+        <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>格式</th><th>模型名</th><th>专属参数</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
+      <div class="hint" style="margin-top:10px;">图片模型显示尺寸/张数/步数；大模型显示 max_tokens 与采样参数。</div>
     </div>
   </div>
 <script src="/session.js"></script>
 <script>
+const $ = id => document.getElementById(id);
+const name_=$('name'), type_=$('type'), format_=$('format'), base_url=$('base_url');
+const api_key=$('api_key'), model_name=$('model_name');
+const size=$('size'), n_=$('n'), sizes_=$('sizes'), steps=$('steps');
+const negative_prompt=$('negative_prompt'), agent_desc=$('agent_desc');
+const max_tokens=$('max_tokens'), temperature=$('temperature'), top_p=$('top_p'), system_prompt=$('system_prompt');
+const multimodal=$('multimodal'), enabled=$('enabled'), err_=$('err');
+
+// 切换类型：只显示该类型的专属字段 + 对应 API 格式。
+function syncType(){
+  const isImg = type_.value==='image';
+  $('g_image').classList.toggle('hide', !isImg);
+  $('g_llm').classList.toggle('hide', isImg);
+  $('row_multimodal').classList.toggle('hide', isImg);
+  if(isImg){ format_.value = (format_.value==='openai_chat') ? 'openai' : format_.value; }
+  else { format_.value = 'openai_chat'; }
+}
+type_.addEventListener('change', syncType);
+
 async function add(){
+  const isImg = type_.value==='image';
   const body={
-    name:name_.value, type:type_.value, format:format_.value, base_url:base_url.value,
-    api_key:api_key.value, model_name:model_name.value, size:size.value,
-    sizes:sizes_.value.split(',').map(s=>s.trim()).filter(Boolean),
-    agent_desc:agent_desc.value,
-    max_tokens:parseInt(max_tokens.value||'0'),
-    n:parseInt(n_.value||'1'), multimodal:multimodal.checked, enabled:enabled.checked
+    name:name_.value.trim(), type:type_.value, format:format_.value, base_url:base_url.value.trim(),
+    api_key:api_key.value.trim(), model_name:model_name.value.trim(),
+    multimodal: isImg ? true : multimodal.checked,
+    enabled: enabled.checked
   };
+  if(isImg){
+    body.size=size.value.trim();
+    body.sizes=sizes_.value.split(',').map(s=>s.trim()).filter(Boolean);
+    body.n=parseInt(n_.value||'1');
+    body.steps=parseInt(steps.value||'30');
+    body.negative_prompt=negative_prompt.value.trim();
+    body.agent_desc=agent_desc.value.trim();
+  }else{
+    body.max_tokens=parseInt(max_tokens.value||'0');
+    body.temperature=parseFloat(temperature.value||'0');
+    body.top_p=parseFloat(top_p.value||'0');
+    body.system_prompt=system_prompt.value;
+  }
   const r=await fetch('/api/upstream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j=await r.json().catch(()=>({}));
-  if(r.ok&&j.ok){ err_.textContent=''; load(); }
+  if(r.ok&&j.ok){ err_.textContent=''; name_.value=''; api_key.value=''; load(); }
   else err_.textContent=j.error||'添加失败';
 }
 async function del(id){ await fetch('/api/upstream/'+id,{method:'DELETE'}); load(); }
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function specCell(m){
+  if(m.type==='image'){
+    const sizes=(m.sizes||[]).map(s=>`<span class="pill">${esc(s)}</span>`).join('')||'<span class="pill">'+esc(m.size||'—')+'</span>';
+    return `${sizes}<br><span class="pill">n=${m.n||1}</span><span class="pill">${m.steps||30}步/次</span>`+
+      (m.negative_prompt?'<br><span class="pill">反向提示词已设</span>':'')+
+      (m.agent_desc?`<br><span style="color:#8fb2e6;font-size:12px">${esc(m.agent_desc)}</span>`:'');
+  }
+  return `<span class="pill">maxTok=${m.max_tokens||2400}</span>`+
+    (m.temperature?`<span class="pill">temp=${m.temperature}</span>`:'')+
+    (m.top_p?`<span class="pill">top_p=${m.top_p}</span>`:'')+
+    (m.system_prompt?`<br><span style="color:#8fb2e6;font-size:12px">${esc(m.system_prompt)}</span>`:'');
+}
 async function load(){
   const j=await (await fetch('/api/upstream')).json();
-  document.getElementById('rows').innerHTML=(j.upstream||[]).map(m=>
-    `<tr><td>${m.id}</td><td>${esc(m.name)}</td><td><span class="pill">${m.type}</span></td><td>${m.format}</td><td><code>${esc(m.model_name)}</code></td><td>${(m.sizes||[]).map(s=>`<span class="pill">${s}</span>`).join('')||m.size||''}</td><td>${m.max_tokens||'—'}</td><td>${m.multimodal?'是':'否'}</td><td><button class="del" onclick="del(${m.id})">删除</button></td></tr>`
-  ).join('')||'<tr><td colspan="9" style="color:#7d93bd">暂无</td></tr>';
+  $('rows').innerHTML=(j.upstream||[]).map(m=>
+    `<tr><td>${m.id}</td><td>${esc(m.name)}</td><td><span class="pill ${m.type==='image'?'img':'llm'}">${m.type==='image'?'图片':'LLM'}</span></td><td>${esc(m.format)}</td><td><code>${esc(m.model_name)}</code></td><td>${specCell(m)}</td><td><button class="del" onclick="del(${m.id})">删除</button></td></tr>`
+  ).join('')||'<tr><td colspan="7" style="color:#7d93bd">暂无</td></tr>';
 }
-function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
-const name_=document.getElementById('name'); const type_=document.getElementById('type');
-const format_=document.getElementById('format'); const base_url=document.getElementById('base_url');
-const api_key=document.getElementById('api_key'); const model_name=document.getElementById('model_name');
-const size=document.getElementById('size'); const n_=document.getElementById('n');
-const sizes_=document.getElementById('sizes'); const agent_desc=document.getElementById('agent_desc');
-const max_tokens=document.getElementById('max_tokens');
-const multimodal=document.getElementById('multimodal'); const enabled=document.getElementById('enabled');
-const err_=document.getElementById('err');
 async function logout(){ try{ localStorage.removeItem('vix_sid'); }catch(e){} await fetch('/api/logout',{method:'POST'}); location.href='/login'; }
+syncType();
 load();
 </script>
 </body>

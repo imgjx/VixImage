@@ -90,10 +90,8 @@
         <div><label>账号</label><input id="gui_user"></div>
         <div><label>新密码（留空不修改）</label><input id="new_password" type="password"></div>
       </div>
-      <div class="row2">
-        <button class="save" onclick="saveUserName()">仅保存用户名</button>
-        <span class="err" id="uname_msg"></span>
-      </div>
+      <label>原密码（修改密码时必填）</label><input id="old_password" type="password">
+      <div class="note">账号与新密码随下方「保存配置」一起提交。</div>
     </div>
     <button class="save" onclick="save()">保存配置</button>
     <div class="err" id="err"></div>
@@ -121,19 +119,19 @@ async function save(){
   };
   const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j=await r.json().catch(()=>({}));
-  if(r.ok&&j.ok){
-    err_.style.color='#5ee08a'; err_.textContent=j.note||'已保存';
-    if(new_password.value){ await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_password:new_password.value})}); }
-  } else { err_.style.color='#ff7b7b'; err_.textContent=j.error||'保存失败'; }
-}
-async function saveUserName(){
+  if(!r.ok||!j.ok){ err_.style.color='#ff7b7b'; err_.textContent=j.error||'保存失败'; return; }
+  err_.style.color='#5ee08a'; err_.textContent=j.note||'已保存';
+  // 账号与密码一并提交（密码留空则不修改）。
   const u=gui_user.value.trim();
-  const msg=document.getElementById('uname_msg');
-  if(!u){ msg.style.color='#ff7b7b'; msg.textContent='用户名不能为空'; return; }
-  const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u})});
-  const j=await r.json().catch(()=>({}));
-  if(r.ok&&j.ok){ msg.style.color='#5ee08a'; msg.textContent='用户名已更新为：'+j.username; }
-  else { msg.style.color='#ff7b7b'; msg.textContent=j.error||'修改失败'; }
+  if(u||new_password.value){
+    const ur=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:u||undefined,new_password:new_password.value||undefined,old_password:old_password.value||undefined})});
+    const uj=await ur.json().catch(()=>({}));
+    if(!ur.ok||!uj.ok){ err_.style.color='#ff7b7b'; err_.textContent=uj.error||'配置已保存，但账号/密码修改失败'; return; }
+    if(u) gui_user.value=uj.username||u;
+    new_password.value=''; old_password.value='';
+    err_.style.color='#5ee08a'; err_.textContent=(j.note||'已保存')+'，账号已更新为：'+(uj.username||u);
+  }
 }
 const gui_port=document.getElementById('gui_port'); const api_port=document.getElementById('api_port');
 const python_bin=document.getElementById('python_bin'); const data_dir=document.getElementById('data_dir');
@@ -143,6 +141,7 @@ const mysql_dsn=document.getElementById('mysql_dsn'); const cache_mode=document.
 const redis_addr=document.getElementById('redis_addr'); const redis_db=document.getElementById('redis_db');
 const redis_pass=document.getElementById('redis_pass'); const api_keys=document.getElementById('api_keys');
 const gui_user=document.getElementById('gui_user'); const new_password=document.getElementById('new_password');
+const old_password=document.getElementById('old_password');
 const err_=document.getElementById('err');
 async function logout(){ try{ localStorage.removeItem('vix_sid'); }catch(e){} await fetch('/api/logout',{method:'POST'}); location.href='/login'; }
 load();

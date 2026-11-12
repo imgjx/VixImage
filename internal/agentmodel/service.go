@@ -61,7 +61,11 @@ func (s *Service) Save(m *model.AgentModel) error {
 			return fmt.Errorf("图片模型 %d 不存在或不是图片模型", im.UpstreamID)
 		}
 		if im.Steps <= 0 {
-			im.Steps = 30 // 默认：每生成一张图消耗 30 步
+			// 默认取图片模型自身配置的「单次生图消耗步数」，未配置则用 30。
+			im.Steps = um.Steps
+			if im.Steps <= 0 {
+				im.Steps = 30 // 默认：每生成一张图消耗 30 步
+			}
 		}
 		im.Name = um.Name
 		clean = append(clean, im)

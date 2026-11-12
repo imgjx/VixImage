@@ -46,6 +46,8 @@ func (s *sqlStore) Init() error {
 			id %s, name TEXT, type TEXT, format TEXT, base_url TEXT, api_key TEXT,
 			model_name TEXT, size TEXT, sizes TEXT, n INT, multimodal BOOLEAN,
 			agent_desc TEXT, max_tokens INT DEFAULT 0, enabled BOOLEAN,
+			steps INT DEFAULT 0, negative_prompt TEXT,
+			temperature REAL DEFAULT 0, top_p REAL DEFAULT 0, system_prompt TEXT,
 			created_at TEXT, updated_at TEXT)`, s.pk()),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS agent_models (
 			id %s, name TEXT, call_name TEXT UNIQUE, base_model_id INT, max_steps INT,
@@ -68,6 +70,11 @@ func (s *sqlStore) Init() error {
 	s.migrateColumn("upstream_models", "sizes", "TEXT")
 	s.migrateColumn("upstream_models", "agent_desc", "TEXT")
 	s.migrateColumn("upstream_models", "max_tokens", "INT DEFAULT 0")
+	s.migrateColumn("upstream_models", "steps", "INT DEFAULT 0")
+	s.migrateColumn("upstream_models", "negative_prompt", "TEXT")
+	s.migrateColumn("upstream_models", "temperature", "REAL DEFAULT 0")
+	s.migrateColumn("upstream_models", "top_p", "REAL DEFAULT 0")
+	s.migrateColumn("upstream_models", "system_prompt", "TEXT")
 	s.migrateColumn("agent_models", "style", "TEXT")
 	s.migrateColumn("agent_models", "deep_think", "BOOLEAN DEFAULT 0")
 	s.migrateColumn("agent_models", "exhaust", "TEXT")
@@ -115,9 +122,9 @@ func (s *sqlStore) SaveUpstream(m *model.UpstreamModel) error {
 		m.CreatedAt = time.Now().UTC()
 		m.UpdatedAt = m.CreatedAt
 		res, err := s.db.Exec(`INSERT INTO upstream_models
-			(name,type,format,base_url,api_key,model_name,size,sizes,n,multimodal,agent_desc,max_tokens,enabled,created_at,updated_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			m.Name, string(m.Type), string(m.Format), m.BaseURL, m.APIKey, m.ModelName, m.Size, string(sizesJSON), m.N, m.Multimodal, m.AgentDesc, m.MaxTokens, m.Enabled, now, now)
+			(name,type,format,base_url,api_key,model_name,size,sizes,n,multimodal,agent_desc,max_tokens,enabled,steps,negative_prompt,temperature,top_p,system_prompt,created_at,updated_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			m.Name, string(m.Type), string(m.Format), m.BaseURL, m.APIKey, m.ModelName, m.Size, string(sizesJSON), m.N, m.Multimodal, m.AgentDesc, m.MaxTokens, m.Enabled, m.Steps, m.NegativePrompt, m.Temperature, m.TopP, m.SystemPrompt, now, now)
 		if err != nil {
 			return err
 		}
@@ -127,12 +134,12 @@ func (s *sqlStore) SaveUpstream(m *model.UpstreamModel) error {
 	}
 	m.UpdatedAt = time.Now().UTC()
 	_, err := s.db.Exec(`UPDATE upstream_models SET name=?,type=?,format=?,base_url=?,api_key=?,
-		model_name=?,size=?,sizes=?,n=?,multimodal=?,agent_desc=?,max_tokens=?,enabled=?,updated_at=? WHERE id=?`,
-		m.Name, string(m.Type), string(m.Format), m.BaseURL, m.APIKey, m.ModelName, m.Size, string(sizesJSON), m.N, m.Multimodal, m.AgentDesc, m.MaxTokens, m.Enabled, now, m.ID)
+		model_name=?,size=?,sizes=?,n=?,multimodal=?,agent_desc=?,max_tokens=?,enabled=?,steps=?,negative_prompt=?,temperature=?,top_p=?,system_prompt=?,updated_at=? WHERE id=?`,
+		m.Name, string(m.Type), string(m.Format), m.BaseURL, m.APIKey, m.ModelName, m.Size, string(sizesJSON), m.N, m.Multimodal, m.AgentDesc, m.MaxTokens, m.Enabled, m.Steps, m.NegativePrompt, m.Temperature, m.TopP, m.SystemPrompt, now, m.ID)
 	return err
 }
 
-const upstreamCols = `id,name,type,format,base_url,api_key,model_name,size,sizes,n,multimodal,agent_desc,max_tokens,enabled,created_at,updated_at`
+const upstreamCols = `id,name,type,format,base_url,api_key,model_name,size,sizes,n,multimodal,agent_desc,max_tokens,enabled,steps,negative_prompt,temperature,top_p,system_prompt,created_at,updated_at`
 
 func (s *sqlStore) GetUpstream(id int64) (*model.UpstreamModel, error) {
 	rows, err := s.db.Query(`SELECT `+upstreamCols+` FROM upstream_models WHERE id=?`, id)
@@ -172,7 +179,7 @@ func scanUpstream(rows *sql.Rows) (*model.UpstreamModel, error) {
 	var m model.UpstreamModel
 	var t, f, c, u, sizesJSON string
 	var multimodal, enabled bool
-	if err := rows.Scan(&m.ID, &m.Name, &t, &f, &m.BaseURL, &m.APIKey, &m.ModelName, &m.Size, &sizesJSON, &m.N, &multimodal, &m.AgentDesc, &m.MaxTokens, &enabled, &c, &u); err != nil {
+	if err := rows.Scan(&m.ID, &m.Name, &t, &f, &m.BaseURL, &m.APIKey, &m.ModelName, &m.Size, &sizesJSON, &m.N, &multimodal, &m.AgentDesc, &m.MaxTokens, &enabled, &m.Steps, &m.NegativePrompt, &m.Temperature, &m.TopP, &m.SystemPrompt, &c, &u); err != nil {
 		return nil, err
 	}
 	m.Type = model.ModelType(t)
