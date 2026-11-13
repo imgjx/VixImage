@@ -34,6 +34,14 @@ type Storage interface {
 	// 分页（仪表盘列表）：返回当前页记录与总条数。
 	ListCallLogsPaged(offset, limit int) ([]model.CallLog, int64, error)
 	CallStats() (*model.CallStats, error)
+
+	// API keys（数据库存储，含调用次数）。
+	SaveAPIKey(k *model.APIKey) error
+	GetAPIKey(key string) (*model.APIKey, error)
+	ListAPIKeys() ([]model.APIKey, error)
+	DeleteAPIKey(id int64) error
+	// IncrAPIKeyCalls 命中鉴权时累加调用次数与最近调用时间。
+	IncrAPIKeyCalls(key string) error
 }
 
 // Open returns the configured storage backend.

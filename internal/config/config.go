@@ -63,12 +63,14 @@ func Default() *Config {
 	}
 	dataDir := filepath.Join(home, ".viximage")
 	return &Config{
-		Version:      1,
-		GUIPort:      8080,
-		APIPort:      8090,
-		GUIUser:      "admin",
-		GUIPassHash:  "", // set by init
-		APIKeys:      []string{"vix-sk-default-0001"},
+		Version:     1,
+		GUIPort:     8080,
+		APIPort:     8090,
+		GUIUser:     "admin",
+		GUIPassHash: "", // set by init
+		// 注意：APIKeys 不再预置默认密钥（vix-sk-default-0001 已是过去式）。
+		// 该字段仅为旧版本 config.json 中密钥的迁移入口，新版本密钥存于数据库。
+		APIKeys:      nil,
 		DataDir:      dataDir,
 		StorageMode:  "sqlite",
 		SQLitePath:   filepath.Join(dataDir, "viximage.db"),
@@ -164,10 +166,6 @@ func Load(dir string) (*Config, error) {
 	if c.GUIPassHash == "" {
 		c.GUIPassHash = hashDefault("admin123")
 	}
-	// Ensure at least one api key.
-	if len(c.APIKeys) == 0 {
-		c.APIKeys = []string{"vix-sk-default-0001"}
-	}
 	global = c
 	return c, nil
 }
@@ -203,9 +201,6 @@ func LoadFile(configPath string) (*Config, error) {
 	_ = os.MkdirAll(c.CacheFileDir, 0o755)
 	if c.GUIPassHash == "" {
 		c.GUIPassHash = hashDefault("admin123")
-	}
-	if len(c.APIKeys) == 0 {
-		c.APIKeys = []string{"vix-sk-default-0001"}
 	}
 	global = c
 	return c, nil

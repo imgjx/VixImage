@@ -14,6 +14,7 @@ import (
 	"viximage/internal/cache"
 	"viximage/internal/config"
 	"viximage/internal/gui"
+	"viximage/internal/model"
 	"viximage/internal/storage"
 	"viximage/internal/upstream"
 )
@@ -111,7 +112,7 @@ func runCLI(cfg *config.Config, args []string) bool {
 	case "config":
 		fmt.Printf("GUI  端口: %d\nAPI  端口: %d\n存储模式: %s\n缓存模式: %s\nGUI 账号: %s\n",
 			cfg.GUIPort, cfg.APIPort, cfg.StorageMode, cfg.CacheMode, cfg.GUIUser)
-		fmt.Printf("API Keys: %v\n", maskList(cfg.APIKeys))
+		fmt.Println("API 密钥: 请使用 `viximage apikey list` 查看（密钥存储于数据库并统计调用次数）")
 		return true
 	case "serve":
 		return false // fall through to boot servers
@@ -156,53 +157,107 @@ func cliUser(cfg *config.Config, args []string) bool {
 
 func cliAPIKey(cfg *config.Config, args []string) bool {
 	if len(args) == 0 {
-		fmt.Println("apikey 子命令: add <key> | rm <key> | list")
+		fmt.Println("apikey 子命令: list | add [key] | rm <id|key>")
 		return true
 	}
+	store, err := storage.Open(cfg)
+	if err != nil {
+		fmt.Println("存储打开失败:", err)
+		return true
+	}
+	if err := store.Init(); err != nil {
+		fmt.Println("存储初始化失败:", err)
+		return true
+	}
+	defer store.Close()
 	switch args[0] {
-	case "add":
-		if len(args) < 2 {
-			fmt.Println("用法: apikey add <key>")
+	case "list":
+		keys, err := store.ListAPIKeys()
+		if err != nil {
+			fmt.Println("查询失败:", err)
 			return true
 		}
-		cfg.APIKeys = append(cfg.APIKeys, args[1])
-	case "rm":
-		if len(args) < 2 {
-			fmt.Println("用法: apikey rm <key>")
+		if len(keys) == 0 {
+			fmt.Println("（无密钥。提示：默认不创建密钥，请先 `viximage apikey add` 新建一个）")
 			return true
 		}
-		out := cfg.APIKeys[:0]
-		for _, k := range cfg.APIKeys {
-			if k != args[1] {
-				out = append(out, k)
+		fmt.Printf("%-4s %-20s %-12s %6s %s\n", "ID", "密钥", "备注", "调用", "最近调用")
+		for _, k := range keys {
+			last := k.LastUsedAt
+			if last == "" {
+				last = "—"
+			}
+			fmt.Printf("%-4d %-20s %-12s %6d %s\n", k.ID, model.MaskKey(k.Key), clip(k.Name, 12), k.Calls, last)
+		}
+	case "add", "gen":
+		var key string
+		if args[0] == "add" && len(args) >= 2 {
+			key = args[1]
+			if ex, _ := store.GetAPIKey(key); ex != nil {
+				fmt.Println("错误: 该密钥已存在")
+				return true
 			}
 		}
-		cfg.APIKeys = out
-	case "list":
-		fmt.Println("API Keys:", maskList(cfg.APIKeys))
-		return true
+		mk := &model.APIKey{Key: key, Name: ""}
+		if err := store.SaveAPIKey(mk); err != nil {
+			fmt.Println("创建失败:", err)
+			return true
+		}
+		fmt.Printf("已创建密钥，完整密钥（仅此一次，请妥善保存）：\n%s\n", mk.Key)
+	case "rm":
+		if len(args) < 2 {
+			fmt.Println("用法: apikey rm <id|key>")
+			return true
+		}
+		id, name := resolveKeyID(store, args[1])
+		if id <= 0 {
+			fmt.Println("未找到该密钥:", args[1])
+			return true
+		}
+		if err := store.DeleteAPIKey(id); err != nil {
+			fmt.Println("删除失败:", err)
+			return true
+		}
+		fmt.Printf("已删除密钥 %s（id=%d）\n", name, id)
 	default:
 		fmt.Println("未知 apikey 子命令:", args[0])
 		return true
 	}
-	if err := cfg.Save(); err != nil {
-		fmt.Println("保存失败:", err)
-		return true
-	}
-	fmt.Println("已更新 API Keys:", maskList(cfg.APIKeys))
 	return true
 }
 
-func maskList(keys []string) []string {
-	out := make([]string, 0, len(keys))
-	for _, k := range keys {
-		if len(k) <= 8 {
-			out = append(out, "******")
-			continue
-		}
-		out = append(out, k[:4]+"****"+k[len(k)-4:])
+// keyLookup 是 CLI 解析密钥时只依赖的最小接口（storage.Storage 天然满足）。
+type keyLookup interface {
+	GetAPIKey(key string) (*model.APIKey, error)
+}
+
+// resolveKeyID 把 CLI 传入的 id 或完整密钥解析为库内 id；返回 0 表示未找到。
+func resolveKeyID(store keyLookup, s string) (int64, string) {
+	if id := atoi64Safe(s); id > 0 {
+		return id, "#" + s
 	}
-	return out
+	if k, err := store.GetAPIKey(s); err == nil && k != nil {
+		return k.ID, model.MaskKey(k.Key)
+	}
+	return 0, ""
+}
+
+func atoi64Safe(s string) int64 {
+	var n int64
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int64(c-'0')
+	}
+	return n
+}
+
+func clip(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }
 
 var _ = strings.TrimSpace

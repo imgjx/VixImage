@@ -11,8 +11,8 @@ type fakeStore struct {
 	saved model.UpstreamModel
 }
 
-func (f *fakeStore) Init() error    { return nil }
-func (f *fakeStore) Close() error   { return nil }
+func (f *fakeStore) Init() error  { return nil }
+func (f *fakeStore) Close() error { return nil }
 func (f *fakeStore) SaveUpstream(m *model.UpstreamModel) error {
 	f.saved = *m
 	m.ID = 1
@@ -22,14 +22,14 @@ func (f *fakeStore) GetUpstream(id int64) (*model.UpstreamModel, error) { return
 func (f *fakeStore) ListUpstream() ([]model.UpstreamModel, error)       { return nil, nil }
 func (f *fakeStore) DeleteUpstream(id int64) error                      { return nil }
 func (f *fakeStore) SaveAgentModel(m *model.AgentModel) error           { return nil }
-func (f *fakeStore) GetAgentModel(id int64) (*model.AgentModel, error)   { return nil, nil }
+func (f *fakeStore) GetAgentModel(id int64) (*model.AgentModel, error)  { return nil, nil }
 func (f *fakeStore) GetAgentModelByCallName(call string) (*model.AgentModel, error) {
 	return nil, nil
 }
 func (f *fakeStore) ListAgentModels() ([]model.AgentModel, error) { return nil, nil }
-func (f *fakeStore) DeleteAgentModel(id int64) error             { return nil }
-func (f *fakeStore) AddCallLog(l *model.CallLog) error           { return nil }
-func (f *fakeStore) UpdateCallLog(l *model.CallLog) error        { return nil }
+func (f *fakeStore) DeleteAgentModel(id int64) error              { return nil }
+func (f *fakeStore) AddCallLog(l *model.CallLog) error            { return nil }
+func (f *fakeStore) UpdateCallLog(l *model.CallLog) error         { return nil }
 func (f *fakeStore) ListCallLogs(limit int) ([]model.CallLog, error) {
 	return nil, nil
 }
@@ -37,6 +37,13 @@ func (f *fakeStore) ListCallLogsPaged(offset, limit int) ([]model.CallLog, int64
 	return nil, 0, nil
 }
 func (f *fakeStore) CallStats() (*model.CallStats, error) { return nil, nil }
+func (f *fakeStore) SaveAPIKey(k *model.APIKey) error     { return nil }
+func (f *fakeStore) GetAPIKey(key string) (*model.APIKey, error) {
+	return nil, nil
+}
+func (f *fakeStore) ListAPIKeys() ([]model.APIKey, error) { return nil, nil }
+func (f *fakeStore) DeleteAPIKey(id int64) error          { return nil }
+func (f *fakeStore) IncrAPIKeyCalls(key string) error     { return nil }
 
 // 图片模型：不该带 LLM 专属字段（max_tokens / temperature / top_p / system_prompt）。
 func TestImageModelDropsLLMFields(t *testing.T) {

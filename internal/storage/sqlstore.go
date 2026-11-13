@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -60,6 +62,9 @@ func (s *sqlStore) Init() error {
 			deep_think BOOLEAN DEFAULT 0, reasoning TEXT, review TEXT, theme TEXT,
 			style TEXT, workspace TEXT, llm_calls INT DEFAULT 0, trace TEXT,
 			created_at TEXT, finished_at TEXT)`, s.pk()),
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS api_keys (
+			id %s, api_key TEXT UNIQUE, name TEXT, calls INT DEFAULT 0,
+			last_used_at TEXT, created_at TEXT, enabled BOOLEAN DEFAULT 1)`, s.pk()),
 	}
 	for _, st := range stmts {
 		if _, err := s.db.Exec(st); err != nil {
@@ -87,7 +92,32 @@ func (s *sqlStore) Init() error {
 	s.migrateColumn("call_logs", "workspace", "TEXT")
 	s.migrateColumn("call_logs", "llm_calls", "INT DEFAULT 0")
 	s.migrateColumn("call_logs", "trace", "TEXT")
+	// 旧版本把密钥写在 config.json 里：首次初始化且库里还没有密钥时，
+	// 把那些旧密钥迁进数据库（仅迁移，绝不预置默认密钥）。
+	s.migrateLegacyAPIKeys()
 	return nil
+}
+
+// migrateLegacyAPIKeys 把 config.json 中的旧 api_keys 迁移进数据库。
+// 仅当数据库 api_keys 表为空、且 config 里确实存过密钥时才导入；导入后不清空
+// config，避免回退到旧版本时密钥丢失。绝不主动创建默认密钥。
+func (s *sqlStore) migrateLegacyAPIKeys() {
+	if s.cfg == nil {
+		return
+	}
+	existing := s.cfg.APIKeys
+	if len(existing) == 0 {
+		return
+	}
+	have, err := s.ListAPIKeys()
+	if err != nil || len(have) > 0 {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, k := range existing {
+		_, _ = s.db.Exec(`INSERT INTO api_keys (api_key,name,calls,created_at,enabled) VALUES (?,?,0,?,1)`,
+			k, "migrated", now)
+	}
 }
 
 // migrateColumn adds a column when it is missing (ignores "already exists").
@@ -391,6 +421,97 @@ func nullToInt(n sql.NullInt64) int64 {
 		return n.Int64
 	}
 	return 0
+}
+
+// ---------------- API keys ----------------
+
+// genAPIKey 生成形如 vix-sk-<32 hex> 的密钥。
+func genAPIKey() string {
+	return "vix-sk-" + randHex(32)
+}
+
+// randHex 返回 n 字节随机数据的十六进制字符串。
+func randHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		// 极罕见：rand 失败则退化为时间戳，密钥价值有限但不应阻断创建。
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
+func (s *sqlStore) SaveAPIKey(k *model.APIKey) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	if k.Key == "" {
+		k.Key = genAPIKey()
+	}
+	if k.ID == 0 {
+		if k.CreatedAt == "" {
+			k.CreatedAt = now
+		}
+		if !k.Enabled {
+			k.Enabled = true
+		}
+		res, err := s.db.Exec(`INSERT INTO api_keys (api_key,name,calls,last_used_at,created_at,enabled)
+			VALUES (?,?,?,?,?,?)`, k.Key, k.Name, k.Calls, k.LastUsedAt, k.CreatedAt, k.Enabled)
+		if err != nil {
+			return err
+		}
+		id, _ := res.LastInsertId()
+		k.ID = id
+		return nil
+	}
+	_, err := s.db.Exec(`UPDATE api_keys SET name=?, enabled=? WHERE id=?`, k.Name, k.Enabled, k.ID)
+	return err
+}
+
+func (s *sqlStore) GetAPIKey(key string) (*model.APIKey, error) {
+	row := s.db.QueryRow(`SELECT id,api_key,name,calls,last_used_at,created_at,enabled FROM api_keys WHERE api_key=?`, key)
+	return scanAPIKey(row)
+}
+
+func (s *sqlStore) ListAPIKeys() ([]model.APIKey, error) {
+	rows, err := s.db.Query(`SELECT id,api_key,name,calls,last_used_at,created_at,enabled FROM api_keys ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.APIKey
+	for rows.Next() {
+		k, err := scanAPIKey(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *k)
+	}
+	return out, nil
+}
+
+func (s *sqlStore) DeleteAPIKey(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM api_keys WHERE id=?`, id)
+	return err
+}
+
+func (s *sqlStore) IncrAPIKeyCalls(key string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(`UPDATE api_keys SET calls=calls+1, last_used_at=? WHERE api_key=?`, now, key)
+	return err
+}
+
+func scanAPIKey(r interface {
+	Scan(dest ...any) error
+}) (*model.APIKey, error) {
+	var k model.APIKey
+	var last, created sql.NullString
+	if err := r.Scan(&k.ID, &k.Key, &k.Name, &k.Calls, &last, &created, &k.Enabled); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	k.LastUsedAt = last.String
+	k.CreatedAt = created.String
+	return &k, nil
 }
 
 // ensure strings import used for potential future helpers

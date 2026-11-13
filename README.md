@@ -155,9 +155,10 @@ docker compose up -d
 ```bash
 ./viximage user set --username admin --password NewPass   # 改 GUI 账号密码
 ./viximage user set --username NewName                  # 仅改用户名（不动密码）
-./viximage apikey add vix-sk-xxxx                         # 增 apikey
-./viximage apikey list                                    # 列 apikey
-./viximage apikey rm  vix-sk-xxxx                         # 删 apikey
+./viximage apikey add                                     # 新建密钥（自动生成，打印完整密钥，仅此一次）
+./viximage apikey add vix-sk-xxxx                         # 新建指定密钥（需全局唯一）
+./viximage apikey list                                    # 列出全部密钥（含调用次数）
+./viximage apikey rm <id|key>                             # 删除密钥（按 id 或完整密钥）
 ./viximage config                                         # 打印当前配置
 ```
 
@@ -168,44 +169,166 @@ docker compose up -d
   与多模态大模型（`max_tokens` / `temperature` / `top_p` / 系统提示词前缀）
 - **我的模型**：创建 / 编辑 Agent（基架模型 + **总步数** + 图片模型**单次消耗步数** +
   风格 + 深度思考 + **步数用完策略 fail / partial**）
-- **系统配置**：端口、双存储 / 双缓存、apikey、GUI 账号与密码（随「保存配置」一起提交）、图片编辑引擎、提取后删除成品
+- **API 密钥**：独立的密钥管理页，可创建多个密钥、分别统计调用次数与最近调用时间（**默认不预置任何密钥**）
+- **系统配置**：端口、双存储 / 双缓存、GUI 账号与密码（随「保存配置」一起提交）、图片编辑引擎、提取后删除成品
 - **Playground**：选「我的模型」跑完整 Agent 自循环，可传参考图，并查看运行日志与每步思考
 
-## API 用法
+## API 文档
+
+API 服务默认监听 `:8090`（可在「系统配置」或启动参数 `-api-port` 修改）。
+**所有接口除 `/health` 外均需鉴权**；鉴权失败返回 `401 {"error":"invalid or missing apikey"}`。
+
+### 鉴权方式
+
+每个请求二选一携带密钥：
+
+| 方式 | 写法 |
+| --- | --- |
+| 请求头 | `X-API-Key: vix-sk-xxxx` |
+| 请求头 | `Authorization: Bearer vix-sk-xxxx` |
+
+密钥在「API 密钥」页或 CLI `viximage apikey add` 创建，**默认不预置任何密钥**。
+每次成功调用都会累加该密钥的 `calls` 计数与最近调用时间（可在「API 密钥」页查看）。
+
+---
+
+### 健康检查
+
+`GET /health`
+
+```json
+{ "status": "ok", "service": "viximage-api", "port": 8090 }
+```
+
+---
+
+### 列出我的模型
+
+`GET /v1/agents`
 
 ```bash
-# 列出我的模型
-curl -H "X-API-Key: vix-sk-default-0001" http://localhost:8090/v1/agents
+curl -H "X-API-Key: vix-sk-xxxx" http://localhost:8090/v1/agents
+```
 
-# 调起一个模型（Agent 进入自循环作图）
+响应：
+
+```json
+{ "agents": [
+  { "id": 1, "name": "海报师", "call_name": "poster", "max_steps": 100,
+    "base_model_id": 1, "image_models": [...], "enabled": true,
+    "style": "creative", "prompt": "..." }
+] }
+```
+
+---
+
+### 调起一个模型（核心接口）
+
+`POST /v1/agents/run` · `Content-Type: application/json`
+
+请求体：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `call_name` | string | **必填**，模型调用名（见 `/v1/agents`） |
+| `prompt` | string | **必填**，创作指令 |
+| `images` | string[] | 可选，参考图。元素为 `/v1/upload` 返回的 `up_xxx.png` id，或 http(s) 直链 |
+| `webhook` | string | 可选，完成时回调的 URL |
+| `deep_think` | bool | 可选，本次强制开启深度思考（覆盖模型设置） |
+| `size` | string | 可选，强制尺寸如 `"1280x720"`（覆盖生图画幅映射） |
+| `trace` | bool | 可选，响应附带每一步短 ThinkFlag（仅 step + think，不暴露内部技能） |
+
+```bash
+# 基础调用：Agent 进入自循环作图
 curl -X POST http://localhost:8090/v1/agents/run \
-  -H "X-API-Key: vix-sk-default-0001" -H 'Content-Type: application/json' \
+  -H "X-API-Key: vix-sk-xxxx" -H 'Content-Type: application/json' \
   -d '{"call_name":"poster","prompt":"做一张竖版科幻电影海报，中心发光星球，顶部大标题，底部演职员小字；先排版，再查看自己的作品，最后完成"}'
 
-# trace:true —— 附带每一步短 ThinkFlag（只有 step + think，不暴露技能）
+# 带 trace：查看每步思考
 curl -X POST http://localhost:8090/v1/agents/run \
-  -H "X-API-Key: vix-sk-default-0001" -H 'Content-Type: application/json' \
+  -H "X-API-Key: vix-sk-xxxx" -H 'Content-Type: application/json' \
   -d '{"call_name":"poster","prompt":"做一张横版撞色音乐节海报","trace":true}'
 
 # 传多张参考图：图层 src 用 ref:0 / ref:1，可抠图/虚化/旋转/圆形裁切后嵌入任意区域
 curl -X POST http://localhost:8090/v1/agents/run \
-  -H "X-API-Key: vix-sk-default-0001" -H 'Content-Type: application/json' \
+  -H "X-API-Key: vix-sk-xxxx" -H 'Content-Type: application/json' \
   -d '{"call_name":"poster","prompt":"把参考图圆形裁切后斜放在右侧，左侧放品牌大字","images":["up_xxx.png"]}'
 
 # 单次请求强制开启深度思考 / 覆盖尺寸
 curl -X POST http://localhost:8090/v1/agents/run \
-  -H "X-API-Key: vix-sk-default-0001" -H 'Content-Type: application/json' \
+  -H "X-API-Key: vix-sk-xxxx" -H 'Content-Type: application/json' \
   -d '{"call_name":"poster","prompt":"科幻海报","deep_think":true,"size":"1280x720"}'
-
-# 修改我的模型（局部更新，未传字段保持不变）
-curl -X PUT http://localhost:8080/api/agents/1 \
-  -H 'Content-Type: application/json' -b cookie.txt \
-  -d '{"name":"新名字","exhaust":"partial"}'
-
-# 上传输入图 / 取回产出图
-curl -X POST http://localhost:8090/v1/upload -F "file=@cat.png"
-curl -H "X-API-Key: vix-sk-default-0001" http://localhost:8090/v1/files/<name>
 ```
+
+成功响应：
+
+```json
+{
+  "status": "success",
+  "output_images": ["/v1/files/xxx.png"],
+  "steps_used": 22,
+  "llm_calls": 2,
+  "exhausted": false,
+  "partial": false,
+  "deep_think": false,
+  "style": "creative",
+  "theme": "...",
+  "workspace": "...",
+  "log": ["...", "..."],
+  "reasoning": "...",
+  "trace": [ { "step": 1, "think": "..." } ]
+}
+```
+
+`status` 取值：`success` / `success_partial`（步数耗尽但已出图） / `failed`。
+`trace:true` 时才会返回 `trace[]` 与 `reasoning`。
+
+---
+
+### 上传输入图
+
+`POST /v1/upload` · `multipart/form-data`，字段名 `file`（可多文件）
+
+```bash
+curl -X POST http://localhost:8090/v1/upload -F "file=@cat.png"
+```
+
+响应：`{ "uploaded": ["up_1700000000000_cat.png"] }` —— 把其中的 `up_xxx.png` 填进
+`/v1/agents/run` 的 `images[]` 即作为参考图。
+
+### 取回产出图
+
+`GET /v1/files/{name}` —— 直接返回图片二进制（无需鉴权头之外的额外参数，但需 API Key）。
+
+```bash
+curl -H "X-API-Key: vix-sk-xxxx" http://localhost:8090/v1/files/xxx.png -o out.png
+```
+
+---
+
+### 上游模型列表
+
+`GET /v1/upstream` —— 返回已配置的上游模型（密钥字段已掩码）。
+
+```bash
+curl -H "X-API-Key: vix-sk-xxxx" http://localhost:8090/v1/upstream
+```
+
+---
+
+### API 密钥管理（GUI 会话鉴权，需登录）
+
+以下接口由控制台「API 密钥」页调用，需携带登录 Cookie（非 API Key）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/apikeys` | 列出全部密钥：`{keys:[{id,key,key_mask,name,calls,last_used_at,created_at,enabled}]}` |
+| `POST` | `/api/apikeys` | 新建密钥，body `{key?,name?}`；`key` 留空自动生成，返回 `{ok,id,key}` |
+| `DELETE` | `/api/apikeys/{id}` | 删除指定密钥，返回 `{ok:true}` |
+
+CLI 等价命令：`viximage apikey list | add [key] | rm <id|key>`。
+
+---
 
 响应关键字段：`status`（`success` / `success_partial` / `failed`）、`output_images`、
 `steps_used`、`llm_calls`、`exhausted`、`partial`；`trace:true` 时额外返回 `trace[]` 与 `reasoning`。

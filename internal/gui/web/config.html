@@ -38,6 +38,7 @@
       <a href="/mymodels">我的模型</a>
       <a href="/upstream">上游模型</a>
       <a href="/playground">Playground</a>
+      <a href="/apikeys">API 密钥</a>
       <a href="/config" class="on">系统配置</a>
     </div>
     <div class="right"><button onclick="logout()">退出</button></div>
@@ -105,7 +106,6 @@ async function load(){
   image_engine.value=j.image_engine||'go';
   storage_mode.value=j.storage_mode; sqlite_path.value=j.sqlite_path; mysql_dsn.value=j.mysql_dsn;
   cache_mode.value=j.cache_mode; redis_addr.value=j.redis_addr; redis_db.value=j.redis_db; redis_pass.value=j.redis_pass;
-  api_keys.value=(j.api_keys||[]).join('\n');
   gui_user.value=j.gui_user||'';
   document.getElementById('delete_outputs').checked=!!j.delete_outputs;
 }
@@ -115,7 +115,6 @@ async function save(){
     image_engine:image_engine.value,
     storage_mode:storage_mode.value, mysql_dsn:mysql_dsn.value,
     cache_mode:cache_mode.value, redis_addr:redis_addr.value, redis_db:parseInt(redis_db.value||'0'), redis_pass:redis_pass.value,
-    api_keys:api_keys.value.split('\n').map(s=>s.trim()).filter(Boolean),
     delete_outputs:document.getElementById('delete_outputs').checked
   };
   const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -140,7 +139,7 @@ const image_engine=document.getElementById('image_engine');
 const storage_mode=document.getElementById('storage_mode'); const sqlite_path=document.getElementById('sqlite_path');
 const mysql_dsn=document.getElementById('mysql_dsn'); const cache_mode=document.getElementById('cache_mode');
 const redis_addr=document.getElementById('redis_addr'); const redis_db=document.getElementById('redis_db');
-const redis_pass=document.getElementById('redis_pass'); const api_keys=document.getElementById('api_keys');
+const redis_pass=document.getElementById('redis_pass');
 const gui_user=document.getElementById('gui_user'); const new_password=document.getElementById('new_password');
 const old_password=document.getElementById('old_password');
 const err_=document.getElementById('err');

@@ -77,19 +77,19 @@ func (s *Server) handlerWithAuth(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid or missing apikey"})
 			return
 		}
-		// count usage in cache (调用概述 can read from storage too)
-		s.cache.Incr("api:calls:total")
+		// 命中有效密钥：累加该密钥的调用次数与最近调用时间。
+		_ = s.store.IncrAPIKeyCalls(key)
 		next.ServeHTTP(w, r)
 	})
 }
 
+// validKey 校验密钥是否有效（存在且启用）。
 func (s *Server) validKey(key string) bool {
-	for _, k := range s.cfg.APIKeys {
-		if k != "" && k == key {
-			return true
-		}
+	k, err := s.store.GetAPIKey(key)
+	if err != nil || k == nil {
+		return false
 	}
-	return false
+	return k.Enabled
 }
 
 func apiKeyFrom(r *http.Request) string {

@@ -54,6 +54,7 @@ func StyleLabel(s string) string {
 // LLM 与图片模型各有专属字段（exclusive fields）：
 //   - LLM 专属：MaxTokens / Temperature / TopP / SystemPrompt
 //   - 图片模型专属：Size / Sizes / N / Steps / NegativePrompt / AgentDesc
+//
 // 专属字段只对对应类型生效，避免把图片参数填给 LLM 造成误配。
 type UpstreamModel struct {
 	ID        int64     `json:"id"`
@@ -65,10 +66,10 @@ type UpstreamModel struct {
 	ModelName string    `json:"model_name"` // upstream model id, e.g. agnes-image-2.5-flash
 
 	// ---- 图片模型专属字段（Type == image 生效）----
-	Size       string   `json:"size"`   // 默认尺寸, e.g. 1024x1024
-	Sizes      []string `json:"sizes"`  // 支持的多种尺寸（空则不限制）
-	N          int      `json:"n"`      // images per call
-	Steps      int      `json:"steps"`  // 该引擎每次生成一张图消耗的步数（成本）
+	Size  string   `json:"size"`  // 默认尺寸, e.g. 1024x1024
+	Sizes []string `json:"sizes"` // 支持的多种尺寸（空则不限制）
+	N     int      `json:"n"`     // images per call
+	Steps int      `json:"steps"` // 该引擎每次生成一张图消耗的步数（成本）
 	// NegativePrompt 是反向提示词（部分上游支持），仅图片模型生效。
 	NegativePrompt string `json:"negative_prompt"`
 	// AgentDesc 是给 agent 看的「引擎介绍」：说明这个引擎擅长什么风格/
@@ -209,3 +210,22 @@ func maskSecret(s string) string {
 	}
 	return s[:4] + "****" + s[len(s)-4:]
 }
+
+// APIKey 是 API 服务的鉴权密钥。与上游模型/我的模型不同，密钥不在配置文件里，
+// 而是存于数据库，以便统计每个密钥的调用次数、可单独禁用/删除。
+// 默认不预置任何密钥，需管理员在「API 密钥」页或 CLI 创建。
+type APIKey struct {
+	ID         int64  `json:"id"`
+	Key        string `json:"key"`          // 完整密钥（仅创建时回显一次）
+	Name       string `json:"name"`         // 备注/标签
+	Calls      int64  `json:"calls"`        // 累计调用次数
+	LastUsedAt string `json:"last_used_at"` // 最近调用时间（RFC3339），空=从未调用
+	CreatedAt  string `json:"created_at"`
+	Enabled    bool   `json:"enabled"`
+}
+
+// MaskKey 返回用于列表展示的掩码（不暴露完整密钥）。
+func (k APIKey) MaskKey() string { return maskSecret(k.Key) }
+
+// MaskKey 对密钥做掩码（与 model.APIKey.MaskKey 等价的包级便利函数）。
+func MaskKey(s string) string { return maskSecret(s) }

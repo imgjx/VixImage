@@ -76,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/mymodels", s.auth(s.page("web/mymodels.html")))
 	mux.HandleFunc("/upstream", s.auth(s.page("web/upstream.html")))
 	mux.HandleFunc("/config", s.auth(s.page("web/config.html")))
+	mux.HandleFunc("/apikeys", s.auth(s.page("web/apikeys.html")))
 	mux.HandleFunc("/playground", s.auth(s.page("web/playground.html")))
 	// api
 	mux.HandleFunc("/api/login", s.apiLogin)
@@ -88,6 +89,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/agents", s.auth(s.apiAgents))
 	mux.HandleFunc("/api/agents/", s.auth(s.apiAgentsByID))
 	mux.HandleFunc("/api/config", s.auth(s.apiConfig))
+	mux.HandleFunc("/api/apikeys", s.auth(s.apiAPIKeys))
+	mux.HandleFunc("/api/apikeys/", s.auth(s.apiAPIKeyByID))
 	mux.HandleFunc("/api/user", s.auth(s.apiUser))
 	// playground
 	mux.HandleFunc("/api/playground", s.auth(s.apiPlayground))
@@ -470,7 +473,6 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 			"redis_addr":     s.cfg.RedisAddr,
 			"redis_pass":     s.cfg.RedisPass,
 			"redis_db":       s.cfg.RedisDB,
-			"api_keys":       s.cfg.APIKeys,
 			"gui_user":       s.cfg.GUIUser,
 			"data_dir":       s.cfg.DataDir,
 			"python_bin":     s.cfg.PythonBin,
@@ -502,17 +504,6 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		if v, ok := b["image_engine"].(string); ok && (v == "go" || v == "python") {
 			s.cfg.ImageEngine = v
-		}
-		if v, ok := b["api_keys"].([]any); ok {
-			ks := []string{}
-			for _, x := range v {
-				if s, ok := x.(string); ok && s != "" {
-					ks = append(ks, s)
-				}
-			}
-			if len(ks) > 0 {
-				s.cfg.APIKeys = ks
-			}
 		}
 		if v, ok := b["python_bin"].(string); ok && v != "" {
 			s.cfg.PythonBin = v
@@ -566,6 +557,73 @@ func (s *Server) apiUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "username": s.cfg.GUIUser})
+}
+
+// ---------------- API 密钥管理 ----------------
+
+// apiAPIKeys 处理 /api/apikeys：GET 列出全部密钥（含调用次数），POST 新建。
+func (s *Server) apiAPIKeys(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.store.ListAPIKeys()
+		if err != nil {
+			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+		out := make([]map[string]any, 0, len(list))
+		for _, k := range list {
+			out = append(out, map[string]any{
+				"id":           k.ID,
+				"key":          k.Key, // 完整密钥仅在列表里给出（管理页），按需复制
+				"key_mask":     k.MaskKey(),
+				"name":         k.Name,
+				"calls":        k.Calls,
+				"last_used_at": k.LastUsedAt,
+				"created_at":   k.CreatedAt,
+				"enabled":      k.Enabled,
+			})
+		}
+		writeJSON(w, 200, map[string]any{"keys": out})
+	case http.MethodPost:
+		var b struct {
+			Key  string `json:"key"`
+			Name string `json:"name"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		// 拒绝手动指定与既有密钥重复的值。
+		if b.Key != "" {
+			if ex, _ := s.store.GetAPIKey(b.Key); ex != nil {
+				writeJSON(w, 400, map[string]any{"error": "该密钥已存在"})
+				return
+			}
+		}
+		mk := &model.APIKey{Key: b.Key, Name: b.Name}
+		if err := s.store.SaveAPIKey(mk); err != nil {
+			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "id": mk.ID, "key": mk.Key})
+	default:
+		writeJSON(w, 405, map[string]any{"error": "method not allowed"})
+	}
+}
+
+// apiAPIKeyByID 处理 /api/apikeys/{id}：DELETE 删除。
+func (s *Server) apiAPIKeyByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		writeJSON(w, 405, map[string]any{"error": "method not allowed"})
+		return
+	}
+	id := atoi64(strings.TrimPrefix(r.URL.Path, "/api/apikeys/"))
+	if id <= 0 {
+		writeJSON(w, 400, map[string]any{"error": "invalid id"})
+		return
+	}
+	if err := s.store.DeleteAPIKey(id); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 // ---------------- Playground ----------------
@@ -701,10 +759,10 @@ func (s *Server) apiPlaygroundAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		var b struct {
-			AgentID int64  `json:"agent_id"`
-			Prompt  string `json:"prompt"`
-			Size    string `json:"size"`
-			Deep    bool   `json:"deep_think"`
+			AgentID int64    `json:"agent_id"`
+			Prompt  string   `json:"prompt"`
+			Size    string   `json:"size"`
+			Deep    bool     `json:"deep_think"`
 			Refs    []string `json:"refs"` // 本地路径 / url
 		}
 		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
