@@ -14,13 +14,22 @@ const (
 type APIFormat string
 
 const (
-	// FormatOpenAI image: POST {base}/images/generations (OpenAI compatible).
+	// FormatOpenAI image: POST {base}/v1/images/generations (OpenAI Images，兼容绝大多数网关).
 	FormatOpenAI APIFormat = "openai"
-	// FormatAgnes image: POST {base}/v1/images/generations (Agnes compatible).
-	FormatAgnes APIFormat = "agnes"
-	// FormatOpenAIChat chat: POST {base}/chat/completions (OpenAI compatible).
+	// FormatOpenAIChat chat: POST {base}/chat/completions (OpenAI chat，支持流式规划).
 	FormatOpenAIChat APIFormat = "openai_chat"
+	// FormatGemini chat/image: POST {base}/v1beta/models/{model}:generateContent (Google Gemini).
+	FormatGemini APIFormat = "gemini"
+	// FormatStability image: POST {base}/v2beta/stable-image/generate/core (Stability AI).
+	FormatStability APIFormat = "stability"
+	// FormatAnthropic chat: POST {base}/v1/messages (Anthropic Claude).
+	FormatAnthropic APIFormat = "anthropic"
 )
+
+// ValidFormats 返回所有支持的上游 API 格式。
+func ValidFormats() []APIFormat {
+	return []APIFormat{FormatOpenAI, FormatOpenAIChat, FormatGemini, FormatStability, FormatAnthropic}
+}
 
 // Agent 风格模式（我的模型可配置，决定 agent 规划时的创作姿态）。
 const (
@@ -52,7 +61,7 @@ func StyleLabel(s string) string {
 // Only multimodal-capable models are allowed.
 //
 // LLM 与图片模型各有专属字段（exclusive fields）：
-//   - LLM 专属：MaxTokens / Temperature / TopP / SystemPrompt
+//   - LLM 专属：MaxTokens / ContextLimit / Temperature / TopP / SystemPrompt
 //   - 图片模型专属：Size / Sizes / N / Steps / NegativePrompt / AgentDesc
 //
 // 专属字段只对对应类型生效，避免把图片参数填给 LLM 造成误配。
@@ -60,10 +69,10 @@ type UpstreamModel struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`       // display name
 	Type      ModelType `json:"type"`       // image | llm
-	Format    APIFormat `json:"format"`     // openai | agnes | openai_chat
-	BaseURL   string    `json:"base_url"`   // e.g. https://api.agnes-ai.cn
+	Format    APIFormat `json:"format"`     // openai | openai_chat | gemini | anthropic | stability
+	BaseURL   string    `json:"base_url"`   // e.g. https://api.openai.com
 	APIKey    string    `json:"api_key"`    // secret (stored as-is; masked on read)
-	ModelName string    `json:"model_name"` // upstream model id, e.g. agnes-image-2.5-flash
+	ModelName string    `json:"model_name"` // upstream model id, e.g. gpt-4o-mini
 
 	// ---- 图片模型专属字段（Type == image 生效）----
 	Size  string   `json:"size"`  // 默认尺寸, e.g. 1024x1024
@@ -80,6 +89,10 @@ type UpstreamModel struct {
 	// MaxTokens 是 LLM 单次输出上限（小上下文模型尤其需要）。
 	// 0 = 使用内置默认；Chat 请求会把它注入 max_tokens。
 	MaxTokens int `json:"max_tokens"`
+	// ContextLimit 是单次请求发给上游的【输入上下文字符上限】（防溢出）。
+	// 与 max_tokens 同类：0 = 不限制；超出时按预算裁剪较早的消息文本，
+	// 保留尾部用户要求与图片，避免复杂需求把上下文撑爆导致上游卡死。
+	ContextLimit int `json:"context_limit"`
 	// Temperature / TopP 控制采样；0 表示不注入该参数（走上游默认）。
 	Temperature float64 `json:"temperature"`
 	TopP        float64 `json:"top_p"`

@@ -420,7 +420,49 @@ func (r *Runtime) Run(req RunRequest) (*RunResult, error) {
 					input = req.InputImages[*tool.Ref]
 				}
 				jobs = append(jobs, genJob{tool, *um, cost, size, input})
-			case ToolView:
+			case ToolQrcode:
+			// 生成二维码 → 登记为产物（零步消耗），可当 img 图层 src 嵌进海报。
+			size := 512
+			if tool.W > 0 {
+				size = tool.W
+			}
+			qrPNG, e := skills.GenerateQR(tool.Text, size, tool.FG, tool.Bg)
+			if e != nil {
+				return r.fail(log, res, fmt.Errorf("第 %d 步 qrcode「%s」: %w", step, tool.ID, e))
+			}
+			qrPath := filepath.Join(tmpDir, fmt.Sprintf("qr_%d_%d.png", step, time.Now().UnixNano()))
+			if e := os.WriteFile(qrPath, qrPNG, 0o644); e != nil {
+				return r.fail(log, res, fmt.Errorf("第 %d 步 qrcode 写文件失败: %w", step, e))
+			}
+			if e := st.addAsset(tool.ID, &assetEntry{
+				Path: qrPath, Kind: "edit", Desc: fmt.Sprintf("二维码 %s", truncateStr(tool.Text, 40)),
+			}); e != nil {
+				return r.fail(log, res, fmt.Errorf("第 %d 步 qrcode: %w", step, e))
+			}
+			ops = append(ops, fmt.Sprintf("qrcode %s", tool.ID))
+		case ToolQrdecode:
+			// 解析二维码内容（只读），解析文本回灌下一轮决策。
+			var srcPath string
+			if strings.EqualFold(strings.TrimSpace(tool.Src), "canvas") {
+				tmp := filepath.Join(ws, fmt.Sprintf("qrscan_%d_%d.png", step, time.Now().UnixNano()))
+				pth, e := renderCurrent(tmp)
+				if e != nil {
+					return r.fail(log, res, fmt.Errorf("第 %d 步 qrdecode(canvas): %w", step, e))
+				}
+				srcPath = pth
+			} else {
+				pth, e := resolve(tool.Src)
+				if e != nil {
+					return r.fail(log, res, fmt.Errorf("第 %d 步 qrdecode(%s): %w", step, tool.Src, e))
+				}
+				srcPath = pth
+			}
+			text, e := skills.DecodeQR(srcPath)
+			if e != nil {
+				return r.fail(log, res, fmt.Errorf("第 %d 步 qrdecode(%s): %w", step, tool.Src, e))
+			}
+			ops = append(ops, fmt.Sprintf("qrdecode(%s)→%q", tool.Src, truncateStr(text, 200)))
+		case ToolView:
 				// 链底工具：查看 canvas 或指定产物（可多张），产出结果图回灌下一轮。
 				for i, s := range tool.Srcs {
 					var path string

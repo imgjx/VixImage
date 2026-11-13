@@ -115,11 +115,13 @@ const plannerSystemPrompt = `你是资深海报设计师 + 图片编辑 Agent，
 - 画中画贴合铁律：嵌入图必须完全落在屏幕/框内（尺寸明显小于屏幕、坐标居中偏内），绝不允许溢出盖住人物或出画；屏幕四边留 8~14% 内边距。若场景图里屏幕位置/角度不确定，优先自己用 rect 画一个屏幕面（深底+细边框）再往里贴参考图，比赌生成图里的屏幕更稳。
 - 用 scrim 压暗、rect/circle/line 做点缀，文字压在主视觉之外的干净区域。
 
-【一步=很多个动作】一轮 tools 可放很多个动作，建议一轮铺完整版（建画布 + 主视觉 + 全部文字/装饰），别每轮只加一两笔。之后可 view、可继续微调。
+【节奏铁律】一轮 tools 控制在 8 个动作以内，只铺 1~2 个板块：首轮建画布+背景+主视觉 gen，之后每轮加一个板块（标题区→特性列表→二维码→装饰），最后整体校色再 finish。绝不在一轮里堆满全部内容——输出过长会被截断导致整轮报错，宁可多轮精修。
 
 工具(t)，每项必须带 t；图层只能写在 add/set 的 layer 里，禁止把裸图层对象直接放进 tools；tools 按顺序执行：
  canvas{w,h,bg:[两色],angle,solid} 建/改画布，像素200~4096；竖屏1080x1920/横版1920x1080/方形1080x1080
  gen{id,p,size,engine,ref} 生图→产物id(消耗步数；p英文提示词；ref=图生图参考：可填输入图序号ref:0、或一个产物id、"ref:N"、图片网址——把参考内容迭代/变体)
+ qrcode{id,text,size,fg,bg} 生成二维码→产物id(零步消耗；text=要编码的网址/文本；size像素默认512；fg/bg可选配色)——产物可当 img 图层 src 嵌进海报(建议白底黑码、周围留白、别加扭曲/滤镜，否则扫不出)
+ qrdecode{src} 解析二维码内容(src=产物id/"canvas"/图片网址)，解析文本回灌下一轮
  add{layer 或 layer:[...]} 追加图层(可一次多个) | set{i,layer} 改第i层(0起) | del{i} 删第i层 | clear{} 清空图层
  layers{} 查看图层清单 | copy{src,as} 复制产物为新id | undo{n} 回滚最近n轮编辑(默认1)
  view{srcs:[产物id|"canvas"|"ref:N"]} 查看作品(可多张)——链底工具，只能放最后一个
@@ -138,7 +140,7 @@ src 只能填 gen 的 id / ref:N(第N张用户参考图) / copy 的 as / 图片�
 // learningData 是写死的 few-shot「学习数据」，由开关决定是否拼在主提示词之后。
 // 与主提示词同为常量，保证 system 前缀稳定、命中缓存；只教「格式 + 创意思路」，不针对具体任务。
 const learningData = `【示范·仅学格式与思路，非本轮任务】
-A) 一轮铺完整版（无参考图，竖版海报）：
+A) 首轮只铺画布+背景+主视觉（竖版海报，后续轮再补文字/二维码等板块）：
 {"think":"一轮铺满科幻海报","tools":[{"t":"canvas","w":1080,"h":1920,"bg":["#05060f","#1a1040"]},{"t":"gen","id":"hero","p":"a glowing planet in deep space, cinematic, vertical","size":"720x1280"},{"t":"add","layer":{"k":"img","src":"hero","x":0,"y":0,"w":1080,"h":1920,"fit":"cover"}},{"t":"add","layer":{"k":"scrim","x":0,"y":880,"w":1080,"h":1040,"dir":"bottom","strength":0.9}},{"t":"add","layer":{"k":"text","s":"星海回声","x":540,"y":1180,"size":120,"color":"#ffffff","anchor":"ma","bold":true,"glow":"#7c3aed"}},{"t":"add","layer":{"k":"text","s":"ECHOES OF THE VOID","x":540,"y":1330,"size":40,"color":"#c4b5fd","anchor":"ma"}},{"t":"finish","src":"canvas"}]}
 B) 参考图做画中画·场景化嵌套（有 ref:0：男孩盯着一台斜放的电脑，屏幕里正是这张参考图）：
 思路：先自己用 rect 画一块深色屏幕面（位置/角度完全可控），再用 img 把 ref:0 缩小、圆角描边、加 persp/shear 透视贴合屏幕，嵌入时四边留内边距绝不溢出；最后压标题。若想让场景本身直接包含参考内容，可用 gen{ref:0,p} 图生图一次成型。
@@ -214,6 +216,7 @@ func buildUserParts(c Ctx, assetTable string, refURIs []string) []client.ChatPar
 	fmt.Fprintf(&b, "[状态] %s ｜ %s ｜ 产物 %d ｜ %s ｜ 可回滚 %d 步\n", orStr(c.CanvasDesc, "画布未建立"), layerDesc, c.AssetCount, inputDesc, c.UndoDepth)
 	if c.Step > 1 {
 		b.WriteString("[续作] 状态跨轮保留，勿重复建画布，也勿重复 add 已铺过的文字/图层（会导致文字重叠乱码）——要改请用 layers 查编号后 set/del；每项带 t、图层写在 add.layer 内；同名 gen=重做；改错了用 undo 回滚、大改后用 view 自检偏移；view/finish 放最后。\n")
+		b.WriteString("[节奏] 复杂/信息量大的作品必须分多轮逐步完成：每轮铺一个板块（先画布背景，再主视觉，再标题区，再各信息板块，最后整体校色与 finish），宁可多轮精修，也不要一轮堆满所有内容导致输出截断。\n")
 	}
 	b.WriteString("[图像模型] " + engineLine(c.Engines) + "\n")
 	b.WriteString("[风格] " + styleGuide(c.Style) + "\n")

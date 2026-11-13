@@ -60,14 +60,17 @@
   - API 专属参数 **`trace: true`**：响应附带每一步的短 ThinkFlag（只有 `step` + `think`，
     **不暴露该步用了哪些技能**）；默认不附带
 - **GUI 与 API 不同端口**：GUI 控制台 `8080`（账号密码登录）/ API 服务 `8090`（apikey 鉴权）
-- **全链路 LLM 驱动**（Agnes 免费文本模型即可，例如 `agnes-2.5-flash` / `agnes-3.0-flash`）
+- **全链路 LLM 驱动**（任意兼容 OpenAI Chat 的多模态文本模型均可）
   - **上游模型按类型分专属字段**：图片模型只配尺寸 / 张数 / 步数 / 反向提示词 / 引擎介绍；
-    大模型只配 `max_tokens` / `temperature` / `top_p` / 系统提示词前缀 —— 两类字段互不串台
-  - 每个 LLM 可配 **`max_tokens`**（自动注入请求）
+    大模型只配 `max_tokens` / `context_limit` / `temperature` / `top_p` / 系统提示词前缀 —— 两类字段互不串台
+  - 每个 LLM 可配 **`max_tokens`**（单次输出上限，自动注入请求）与
+    **`context_limit`**（输入上下文字符上限，防复杂需求上下文溢出；按预算裁较早消息、保图片与尾部要求）
   - **风格模式**：按需执行 · 创意脑洞 · 电影大片；**深度思考模式**可单请求覆盖
   - 上游图片模型可填「对 Agent 的介绍」+ 多尺寸 `sizes`，Agent 据此对症选引擎
-- **图像生产技能 `gen`**：兼容 OpenAI / Agnes 图片 API，**并行创建请求**（上限 4）、
+- **图像生产技能 `gen`**：兼容 OpenAI Images / Gemini / Stability 等主流图片 API，**并行创建请求**（上限 4）、
   图生图 `ref`、`response_format` 与 `data[].url / b64_json / images / output` 等多种响应格式
+- **二维码双技能**：`qrcode` 生成真实可扫二维码（白底黑码、容错最高、可自定义配色），
+  `qrdecode` 解析任意产物/画布/图片里的二维码并把内容回灌给模型继续决策
 - **Agent 临时工作区**：每次运行独立工作区，可放多张图片、做坏了 `undo` 回滚或重做同名产物即覆盖，
   也能用 `copy` 存档一版再分叉试改；成品提取后**中间产物 100% 删除**；
   可配置「提取后是否连成品一起删除」（`delete_outputs`）
@@ -189,6 +192,28 @@ API 服务默认监听 `:8090`（可在「系统配置」或启动参数 `-api-p
 
 密钥在「API 密钥」页或 CLI `viximage apikey add` 创建，**默认不预置任何密钥**。
 每次成功调用都会累加该密钥的 `calls` 计数与最近调用时间（可在「API 密钥」页查看）。
+
+---
+
+### 上游兼容格式（`format` 字段）
+
+VixImage 本身是**图片生成系统**，上游以**图片生成接口**为主，同时兼容常见**文本接口**（含流式），
+不绑定任何私有格式。在「上游模型」页按类型选择 `format` 即可，旧版本私有 `agnes` 格式会自动迁移为 `openai`。
+
+| `format` | 适用 | 对应上游协议 | 端点 |
+| --- | --- | --- | --- |
+| `openai` | 图片 | OpenAI Images（兼容绝大多数第三方网关 / 中转） | `POST {base}/v1/images/generations` |
+| `gemini` | 图片 / 文本 | Google Gemini `generateContent` | `POST {base}/v1beta/models/{model}:generateContent` |
+| `stability` | 图片 | Stability AI 稳定扩散 | `POST {base}/v2beta/stable-image/generate/core` |
+| `openai_chat` | 文本 | OpenAI Chat（规划器，**支持 SSE 流式**，每一步都能看到） | `POST {base}/v1/chat/completions` |
+| `anthropic` | 文本 | Anthropic Claude Messages | `POST {base}/v1/messages` |
+
+要点：
+- **图片接口**：自动请求 `b64_json`，兼容 `data[].url / b64_json / images / output` 等多种回包；
+  图生图 `ref` 参考图会自动转 data URI；`base` 末尾带 `/v1` 时自动去重，不会出现 `/v1/v1/`。
+- **文本接口**：`openai_chat` 支持 `stream` 增量回调，规划过程可逐段展示；
+  Gemini / Anthropic 用各自原生协议适配，并解析出文本与内联图片。
+- 所有上游请求统一带浏览器 UA，规避部分网关对非浏览器客户端的拦截。
 
 ---
 

@@ -64,14 +64,11 @@
       </select>
       <div class="hint">切换类型后只显示该类型的专属字段：图片模型管尺寸/张数/步数，大模型管 token 与采样参数。</div>
       <label>API 格式</label>
-      <select id="format">
-        <option value="openai">OpenAI 兼容 (images/generations)</option>
-        <option value="agnes">Agnes 兼容 (v1/images/generations)</option>
-        <option value="openai_chat">OpenAI 兼容 Chat (chat/completions)</option>
-      </select>
-      <label>Base URL</label><input id="base_url" placeholder="https://api.example.com">
+      <select id="format"></select>
+      <div class="hint">图片模型：OpenAI Images / Gemini / Stability · 大模型：OpenAI Chat(流式) / Gemini / Anthropic。切换类型自动列出对应格式。</div>
+      <label>Base URL</label><input id="base_url" placeholder="https://api.openai.com">
       <label>API Key</label><input id="api_key" type="password">
-      <label>模型名 (model_name)</label><input id="model_name" placeholder="agnes-image-2.5-flash">
+      <label>模型名 (model_name)</label><input id="model_name" placeholder="gpt-image-1 / gemini-2.5-flash">
 
       <!-- 图片模型专属字段 -->
       <div id="g_image">
@@ -95,6 +92,9 @@
         <label>最大输出 Token（max_tokens）</label>
         <input id="max_tokens" type="number" value="2400" min="0" placeholder="2400">
         <div class="hint">LLM 单次回复上限；小上下文模型务必设置。0 或留空用内置缺省 2400，上限 32000。</div>
+        <label>上下文限制（context_limit，字符数）</label>
+        <input id="context_limit" type="number" value="0" min="0" placeholder="0 = 不限制">
+        <div class="hint">单次发给上游的【输入】上下文字符上限，与 max_tokens 相对（一个管输入、一个管输出）。复杂/多轮需求按预算裁掉较早的消息文本，保留尾部要求与图片，防止上下文溢出卡死。0=不限制，建议 16000~60000。</div>
         <div class="row2">
           <div><label>温度 temperature</label><input id="temperature" type="number" step="0.1" min="0" max="2" placeholder="0.5"></div>
           <div><label>top_p</label><input id="top_p" type="number" step="0.05" min="0" max="1" placeholder="留空=上游默认"></div>
@@ -116,7 +116,7 @@
         <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>格式</th><th>模型名</th><th>专属参数</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
-      <div class="hint" style="margin-top:10px;">图片模型显示尺寸/张数/步数；大模型显示 max_tokens 与采样参数。</div>
+      <div class="hint" style="margin-top:10px;">图片模型显示尺寸/张数/步数；大模型显示 max_tokens / 上下文限制与采样参数。</div>
     </div>
   </div>
 <script src="/session.js"></script>
@@ -126,17 +126,23 @@ const name_=$('name'), type_=$('type'), format_=$('format'), base_url=$('base_ur
 const api_key=$('api_key'), model_name=$('model_name');
 const size=$('size'), n_=$('n'), sizes_=$('sizes'), steps=$('steps');
 const negative_prompt=$('negative_prompt'), agent_desc=$('agent_desc');
-const max_tokens=$('max_tokens'), temperature=$('temperature'), top_p=$('top_p'), system_prompt=$('system_prompt');
+const max_tokens=$('max_tokens'), context_limit=$('context_limit'), temperature=$('temperature'), top_p=$('top_p'), system_prompt=$('system_prompt');
 const multimodal=$('multimodal'), enabled=$('enabled'), err_=$('err');
 
-// 切换类型：只显示该类型的专属字段 + 对应 API 格式。
+// 各家兼容格式：图片接口为主，文本接口顺带（含流式）。
+const FMT_IMG=[['openai','OpenAI Images · images/generations'],['gemini','Google Gemini · generateContent'],['stability','Stability AI · stable-image/generate']];
+const FMT_LLM=[['openai_chat','OpenAI Chat · chat/completions（支持流式）'],['gemini','Google Gemini · generateContent'],['anthropic','Anthropic Claude · v1/messages']];
+
+// 切换类型：只显示该类型的专属字段 + 对应 API 格式（删掉了自家 agnes 私有格式）。
 function syncType(){
   const isImg = type_.value==='image';
   $('g_image').classList.toggle('hide', !isImg);
   $('g_llm').classList.toggle('hide', isImg);
   $('row_multimodal').classList.toggle('hide', isImg);
-  if(isImg){ format_.value = (format_.value==='openai_chat') ? 'openai' : format_.value; }
-  else { format_.value = 'openai_chat'; }
+  const list = isImg ? FMT_IMG : FMT_LLM;
+  const cur = format_.value;
+  format_.innerHTML = list.map(([v,t])=>`<option value="${v}">${t}</option>`).join('');
+  format_.value = list.some(([v])=>v===cur) ? cur : list[0][0];
 }
 type_.addEventListener('change', syncType);
 
@@ -157,6 +163,7 @@ async function add(){
     body.agent_desc=agent_desc.value.trim();
   }else{
     body.max_tokens=parseInt(max_tokens.value||'0');
+    body.context_limit=parseInt(context_limit.value||'0');
     body.temperature=parseFloat(temperature.value||'0');
     body.top_p=parseFloat(top_p.value||'0');
     body.system_prompt=system_prompt.value;
@@ -176,6 +183,7 @@ function specCell(m){
       (m.agent_desc?`<br><span style="color:#8fb2e6;font-size:12px">${esc(m.agent_desc)}</span>`:'');
   }
   return `<span class="pill">maxTok=${m.max_tokens||2400}</span>`+
+    `<span class="pill">ctx=${m.context_limit||'不限'}</span>`+
     (m.temperature?`<span class="pill">temp=${m.temperature}</span>`:'')+
     (m.top_p?`<span class="pill">top_p=${m.top_p}</span>`:'')+
     (m.system_prompt?`<br><span style="color:#8fb2e6;font-size:12px">${esc(m.system_prompt)}</span>`:'');

@@ -53,7 +53,7 @@ func newFakeUpstream(t *testing.T) *fakeUpstream {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":%q}}]}`, turn)
 	})
-	mux.HandleFunc("/images/generations", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/images/generations", func(w http.ResponseWriter, r *http.Request) {
 		img := image.NewRGBA(image.Rect(0, 0, 8, 8))
 		for x := 0; x < 8; x++ {
 			for y := 0; y < 8; y++ {

@@ -134,6 +134,17 @@ func fillTool(t *Tool, m map[string]json.RawMessage) {
 	if v, ok := g("engine"); ok {
 		t.Engine = toStr(v)
 	}
+	if v, ok := g("text", "content", "data", "value"); ok {
+		t.Text = toStr(v)
+	}
+	if v, ok := g("fg", "front", "fore", "fg_color"); ok {
+		t.FG = toColor(v)
+	}
+	if v, ok := g("bg_color", "bg", "back", "back_color"); ok {
+		if s := toColor(v); s != "" {
+			t.Bg = s
+		}
+	}
 	if v, ok := g("ref"); ok {
 		// 空字符串不视为引用；null 已在 rawVal 层排除。
 		// 整数 → 输入图序号（图生图 ref:N）；字符串 → 产物 id / "ref:N" / 网址，

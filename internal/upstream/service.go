@@ -31,6 +31,20 @@ func (s *Service) Save(m *model.UpstreamModel) error {
 	if m.Type != model.TypeImage && m.Type != model.TypeLLM {
 		return fmt.Errorf("type must be 'image' or 'llm'")
 	}
+	// 旧版本私有 agnes 格式已移除：入参兼容迁移为 openai（不报错）。
+	if m.Format == "agnes" {
+		m.Format = model.FormatOpenAI
+	}
+	// 格式必须是声明支持的兼容协议之一，拒绝自造格式。
+	validFormat := false
+	for _, f := range model.ValidFormats() {
+		if m.Format == "" || m.Format == f {
+			validFormat = true
+		}
+	}
+	if !validFormat {
+		return fmt.Errorf("不支持的 API 格式 %q（合法：openai / openai_chat / gemini / anthropic / stability）", m.Format)
+	}
 	if m.Type == model.TypeImage {
 		// image generation models always produce multimodal output
 		m.Multimodal = true
@@ -46,6 +60,7 @@ func (s *Service) Save(m *model.UpstreamModel) error {
 		}
 		// LLM 专属字段对图片模型一律无效，直接清零避免误配。
 		m.MaxTokens = 0
+		m.ContextLimit = 0
 		m.Temperature = 0
 		m.TopP = 0
 		m.SystemPrompt = ""
@@ -63,6 +78,9 @@ func (s *Service) Save(m *model.UpstreamModel) error {
 		}
 		if m.MaxTokens > 32000 {
 			return fmt.Errorf("max_tokens 过大（上限 32000）")
+		}
+		if m.ContextLimit < 0 || m.ContextLimit > 2000000 {
+			return fmt.Errorf("context_limit 需在 0~2000000 之间（0=不限制）")
 		}
 		if m.Temperature < 0 || m.Temperature > 2 {
 			return fmt.Errorf("temperature 需在 0~2 之间")

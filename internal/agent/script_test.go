@@ -111,14 +111,7 @@ func TestNoFallbackAndAntiInjection(t *testing.T) {
 			t.Fatalf("%s: 应报错，不能兜底放行", name)
 		}
 	}
-	// 工具数爆量
-	many := Turn{Think: "x"}
-	for i := 0; i < MaxToolsPerTurn+1; i++ {
-		many.Tools = append(many.Tools, Tool{T: ToolClear})
-	}
-	if err := validateTurn(&many, 0); err == nil {
-		t.Fatal("超过单轮工具数上限应报错")
-	}
+	// 单轮工具数上限已删除：靠最长输出与步数预算约束，不再校验工具数量。
 }
 
 // TestStepModel：步数模型 = 每次请求 1 步 + 生图按引擎扣分。
@@ -679,7 +672,7 @@ func TestLayerTableAndIsEditing(t *testing.T) {
 
 // TestQualityPrompt：主提示词必须强调质量完美/只允许极细微瑕疵、完成前 view 自检、一步多动作。
 func TestQualityPrompt(t *testing.T) {
-	for _, kw := range []string{"质量必须完美", "只允许极细微瑕疵", "view", "自检", "一步", "很多个动作", "copy", "undo", "用户参考图"} {
+	for _, kw := range []string{"质量必须完美", "只允许极细微瑕疵", "view", "自检", "节奏铁律", "多轮", "qrcode", "qrdecode", "copy", "undo", "用户参考图"} {
 		if !strings.Contains(plannerSystemPrompt, kw) {
 			t.Fatalf("主提示词缺少关键字 %q", kw)
 		}
@@ -719,7 +712,7 @@ func TestSystemPromptCachePrefix(t *testing.T) {
 
 // TestLearningDataCreative：学习数据示范「更主动的创意实现」——画中画 / 斜放屏幕 / 参考图嵌套 / 图生图。
 func TestLearningDataCreative(t *testing.T) {
-	for _, kw := range []string{"画中画", "场景化", "ref:0", "gen", "persp", "shear", "图生图", "一轮铺完整版", "view"} {
+	for _, kw := range []string{"画中画", "场景化", "ref:0", "gen", "persp", "shear", "图生图", "首轮只铺画布", "view"} {
 		if !strings.Contains(learningData, kw) {
 			t.Fatalf("学习数据缺少创意示范关键字 %q", kw)
 		}

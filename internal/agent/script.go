@@ -18,8 +18,9 @@ const (
 	StepPerLLMCall   = 1
 	DefaultMaxSteps  = 100
 	MaxTextRunes     = 240 // 单个 text 图层文本上限（防"满屏重复字符"注入）
-	MaxToolsPerTurn  = 24  // 单轮工具数上限（防爆量输出）
+	MaxUndoSteps     = 24  // undo 单次回滚步数上限
 	MaxLayerCount    = 80  // 画布图层总数上限
+	MaxQRText        = 800 // 单个二维码内容字符上限
 	MaxOutputPerView = 6   // 单次回灌给大模型的图片数上限
 	DefaultGenCost   = 30  // 引擎未配置时的默认生图消耗步数
 	MaxForceReviews  = 3   // 交付前「系统级强制 view」最多回看次数（防小模型反复改动耗光步数）
@@ -41,6 +42,8 @@ type Turn struct {
 //
 //	canvas 建立/重设画布         w,h,bg,angle,solid
 //	gen    生成一张图片(有产物)   id,p,size,engine,ref
+//	qrcode 生成二维码(有产物)      id,text,size,fg,bg
+//	qrdecode 解析二维码内容        src
 //	add    追加一个图层           layer
 //	set    替换第 i 个图层        i,layer
 //	del    删除第 i 个图层        i
@@ -72,6 +75,11 @@ type Tool struct {
 	Ref    *int   `json:"ref"` // 整数 → 输入图序号（ref:0 图生图）
 	RefStr string `json:"-"`   // 字符串 → 产物 id / "ref:N" / 网址：从已有产物做图生图（LLM 指定参考）
 
+	// qrcode —— Text 是要编码的内容；FG/Bg 可选前景/背景色（解析层处理 bg 别名）。
+	Text string `json:"text"`
+	FG   string `json:"fg"`
+	Bg   string `json:"-"`
+
 	// add / set / del —— Layers 由解析层在 layer 写成数组时展开（一轮可一次加多个图层）。
 	Layer  *LayerSpec  `json:"layer"`
 	Layers []LayerSpec `json:"-"`
@@ -92,6 +100,8 @@ type Tool struct {
 const (
 	ToolCanvas = "canvas"
 	ToolGen    = "gen"
+	ToolQrcode   = "qrcode"
+	ToolQrdecode = "qrdecode"
 	ToolAdd    = "add"
 	ToolSet    = "set"
 	ToolDel    = "del"
@@ -206,7 +216,7 @@ func copyDest(t Tool) string {
 // view/finish 只读或收尾，layers/undo 不改状态，均不算编辑。
 func isEditingTool(t string) bool {
 	switch t {
-	case ToolCanvas, ToolGen, ToolAdd, ToolSet, ToolDel, ToolClear, ToolCopy:
+	case ToolCanvas, ToolGen, ToolAdd, ToolSet, ToolDel, ToolClear, ToolCopy, ToolQrcode:
 		return true
 	}
 	return false
@@ -238,15 +248,12 @@ func validateTurn(t *Turn, nInputs int) error {
 	if len(t.Tools) == 0 {
 		return fmt.Errorf("本轮 tools 为空：没有可执行的调用")
 	}
-	if len(t.Tools) > MaxToolsPerTurn {
-		return fmt.Errorf("单轮工具数 %d 超过上限 %d（拒绝爆量输出）", len(t.Tools), MaxToolsPerTurn)
-	}
 	bottomSeen := false
 	genIDs := map[string]bool{}
 	for i, tool := range t.Tools {
 		k := normTool(tool.T)
 		if k == "" {
-			return fmt.Errorf("tools[%d] 未知工具 %q（合法：canvas/gen/add/set/del/clear/copy/undo/layers/view/finish）", i, tool.T)
+			return fmt.Errorf("tools[%d] 未知工具 %q（合法：canvas/gen/qrcode/qrdecode/add/set/del/clear/copy/undo/layers/view/finish）", i, tool.T)
 		}
 		if isBottomTool(k) {
 			if bottomSeen {
@@ -275,6 +282,20 @@ func validateTurn(t *Turn, nInputs int) error {
 			}
 			if tool.Ref != nil && (*tool.Ref < 0 || *tool.Ref >= nInputs) {
 				return fmt.Errorf("tools[%d] gen.ref=%d 越界（输入图共 %d 张）", i, *tool.Ref, nInputs)
+			}
+		case ToolQrcode:
+			if strings.TrimSpace(tool.ID) == "" {
+				return fmt.Errorf("tools[%d] qrcode 缺少 id", i)
+			}
+			if strings.TrimSpace(tool.Text) == "" {
+				return fmt.Errorf("tools[%d] qrcode 缺少 text（要编码的内容）", i)
+			}
+			if len([]rune(tool.Text)) > MaxQRText {
+				return fmt.Errorf("tools[%d] qrcode 内容长度 %d 超过上限 %d", i, len([]rune(tool.Text)), MaxQRText)
+			}
+		case ToolQrdecode:
+			if strings.TrimSpace(tool.Src) == "" {
+				return fmt.Errorf("tools[%d] qrdecode 缺少 src（产物 id / canvas / 图片网址）", i)
 			}
 		case ToolAdd, ToolSet:
 			if tool.Layer == nil {
@@ -314,8 +335,8 @@ func validateTurn(t *Turn, nInputs int) error {
 			}
 		case ToolUndo:
 			// n<=0 归一为 1；负得离谱/爆量直接拒绝（防爆量、防注入）。
-			if tool.N > MaxToolsPerTurn {
-				return fmt.Errorf("tools[%d] undo 步数 n=%d 过大（上限 %d）", i, tool.N, MaxToolsPerTurn)
+			if tool.N > MaxUndoSteps {
+				return fmt.Errorf("tools[%d] undo 步数 n=%d 过大（上限 %d）", i, tool.N, MaxUndoSteps)
 			}
 		case ToolLayers:
 			// 无参数：返回当前图层清单文本供下一轮决策。
@@ -355,6 +376,10 @@ func normTool(t string) string {
 		return ToolCanvas
 	case ToolGen, "genimage", "generate":
 		return ToolGen
+	case ToolQrcode, "qr", "二维码", "生成二维码":
+		return ToolQrcode
+	case ToolQrdecode, "qr_scan", "qrdecode_image", "解析二维码", "扫码":
+		return ToolQrdecode
 	case ToolAdd, "addlayer":
 		return ToolAdd
 	case ToolSet, "setlayer":
