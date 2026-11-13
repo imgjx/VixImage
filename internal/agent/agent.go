@@ -28,6 +28,10 @@ import (
 // maxParallel 是并发创建图片请求的上限。
 const maxParallel = 4
 
+// maxPlanRetries 是单轮决策（大模型输出）的容错重试上限：解析失败 / 工具非法时，
+// 把错误反馈给模型、让其在同一轮上下文里重新输出，而不是整体失败（避免前序步骤全部报废）。
+const maxPlanRetries = 3
+
 // Runtime 执行一个「我的模型」：一个简易的、技能全是图像工作相关的自循环 Agent。
 // 每轮一次大模型请求 = 一步，产出一批工具调用(tools)；执行器严格解析并逐条执行。
 // 有「完成信号」(finish) 与「查看作品」(view) 两个链底工具。无兜底：解析失败、
@@ -263,19 +267,38 @@ func (r *Runtime) Run(req RunRequest) (*RunResult, error) {
 		parts := buildUserParts(ctx, st.assetTable(), refURIs)
 		forceReviewNext = false // 该提示只作用于紧邻的这一轮自检
 
-		// ---- 3. 一次大模型请求 = 1 步 ----
-		turn, err := p.decide(*base, sys, parts)
-		if err != nil {
-			return r.fail(log, res, err) // 解析/调用失败：直接报错，无兜底
+		// ---- 3. 一次大模型请求 = 1 步（带单轮容错：解析/工具非法则反馈错误、重试本轮）----
+		planRetry := 0
+		var turn *Turn
+		for {
+			t, err := p.decide(*base, sys, parts)
+			if err == nil {
+				if ve := validateTurn(t, len(req.InputImages)); ve != nil {
+					err = fmt.Errorf("工具非法: %w", ve)
+				}
+			}
+			if err == nil {
+				turn = t
+				break
+			}
+			// 解析失败 / 工具非法：把错误反馈给模型，在同一轮上下文里重输出（不前进 step，避免前序步骤报废）。
+			if planRetry < maxPlanRetries {
+				planRetry++
+				used += StepPerLLMCall
+				llmCalls++
+				logFn("[重试本轮 %d/%d] 输出被拒：%s", planRetry, maxPlanRetries, truncateStr(err.Error(), 160))
+				lastResult = fmt.Sprintf("[系统] 你上一轮输出的 JSON 无法执行（%s）。请严格按工具规范，只输出【本轮】一个合法的 {think,tools} JSON：不要加解释文字、tools 不能为空、工具名(t)与图层 kind 必须非空。", truncateStr(err.Error(), 160))
+				ctx.LastResult = lastResult
+				parts = buildUserParts(ctx, st.assetTable(), refURIs)
+				continue
+			}
+			return r.fail(log, res, fmt.Errorf("第 %d 步决策失败（重试 %d 次仍无效）: %w ｜原始输出: %s", step, maxPlanRetries, err, truncateStr(p.lastRaw, 1200)))
 		}
 		used += StepPerLLMCall
 		llmCalls++
 		// 空 tools 时先把原始输出记进日志，便于定位小模型跑偏。
 		if len(turn.Tools) == 0 {
 			logFn("[调试] 第 %d 步原始输出：%s", step, truncateStr(p.lastRaw, 400))
-		}
-		if err := validateTurn(turn, len(req.InputImages)); err != nil {
-			return r.fail(log, res, fmt.Errorf("第 %d 步工具非法（不回退）: %w ｜原始输出: %s", step, err, truncateStr(p.lastRaw, 1500)))
 		}
 		if res.Theme == "" && strings.TrimSpace(turn.Think) != "" {
 			res.Theme = truncateStr(turn.Think, 40)
@@ -331,16 +354,18 @@ func (r *Runtime) Run(req RunRequest) (*RunResult, error) {
 				if len(layers) == 0 && tool.Layer != nil {
 					layers = []LayerSpec{*tool.Layer}
 				}
-				if tool.I < 0 || tool.I+len(layers) > len(st.layers) {
-					return r.fail(log, res, fmt.Errorf("第 %d 步 set 索引 %d 越界（图层 %d）", step, tool.I, len(st.layers)))
-				}
+			if tool.I < 0 || tool.I+len(layers) > len(st.layers) {
+				logFn("[警告] 第 %d 步 set 索引 %d 越界（现有图层 %d），已跳过该 set", step, tool.I, len(st.layers))
+				continue
+			}
 				for j, l := range layers {
 					st.layers[tool.I+j] = l
 					ops = append(ops, fmt.Sprintf("set[%d] %s", tool.I+j, normKind(l.K)))
 				}
 			case ToolDel:
 				if tool.I < 0 || tool.I >= len(st.layers) {
-					return r.fail(log, res, fmt.Errorf("第 %d 步 del 索引 %d 越界（图层 %d）", step, tool.I, len(st.layers)))
+					logFn("[警告] 第 %d 步 del 索引 %d 越界（现有图层 %d），已跳过该 del", step, tool.I, len(st.layers))
+					continue
 				}
 				st.layers = append(st.layers[:tool.I], st.layers[tool.I+1:]...)
 				ops = append(ops, fmt.Sprintf("del[%d]", tool.I))

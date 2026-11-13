@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"viximage/internal/client"
 	"viximage/internal/model"
@@ -115,7 +117,11 @@ const plannerSystemPrompt = `你是资深海报设计师 + 图片编辑 Agent，
 - 画中画贴合铁律：嵌入图必须完全落在屏幕/框内（尺寸明显小于屏幕、坐标居中偏内），绝不允许溢出盖住人物或出画；屏幕四边留 8~14% 内边距。若场景图里屏幕位置/角度不确定，优先自己用 rect 画一个屏幕面（深底+细边框）再往里贴参考图，比赌生成图里的屏幕更稳。
 - 用 scrim 压暗、rect/circle/line 做点缀，文字压在主视觉之外的干净区域。
 
-【节奏铁律】一轮 tools 控制在 8 个动作以内，只铺 1~2 个板块：首轮建画布+背景+主视觉 gen，之后每轮加一个板块（标题区→特性列表→二维码→装饰），最后整体校色再 finish。绝不在一轮里堆满全部内容——输出过长会被截断导致整轮报错，宁可多轮精修。
+【节奏铁律·防截断】上游有输出长度上限，JSON 被截断整轮就报废——所以每轮必须克制：
+- **首轮【只】输出 canvas 一个工具**，不要附带任何 gen/add/text（建完画布就结束这一轮）。
+- 从第二轮起，每轮 tools 总数严格 ≤ 2：要么单独 1 个 gen（生图，等下一轮再 add），要么 add/set/del + 少量文字，绝不混堆。
+- 固定顺序逐步铺：① canvas → ② gen 主视觉背景 → ③ add 铺背景+压暗 → ④ gen 第二张素材 → ⑤ add 铺第二张 → ⑥ 标题区文字 → ⑦ 特性列表 → ⑧ 二维码(qrcode)+旁注 → ⑨ 装饰/校色 → ⑩ finish。每步单独一轮，宁可多轮也不要一轮堆满。
+- 文字用 \n 换行写在【一个】text 图层里（如「特性一\n特性二\n特性三」），不要为每行拆成多个 text 图层——既省图层数也压缩单轮输出，避免输出过长被截断。
 
 工具(t)，每项必须带 t；图层只能写在 add/set 的 layer 里，禁止把裸图层对象直接放进 tools；tools 按顺序执行：
  canvas{w,h,bg:[两色],angle,solid} 建/改画布，像素200~4096；竖屏1080x1920/横版1920x1080/方形1080x1080
@@ -140,8 +146,9 @@ src 只能填 gen 的 id / ref:N(第N张用户参考图) / copy 的 as / 图片�
 // learningData 是写死的 few-shot「学习数据」，由开关决定是否拼在主提示词之后。
 // 与主提示词同为常量，保证 system 前缀稳定、命中缓存；只教「格式 + 创意思路」，不针对具体任务。
 const learningData = `【示范·仅学格式与思路，非本轮任务】
-A) 首轮只铺画布+背景+主视觉（竖版海报，后续轮再补文字/二维码等板块）：
-{"think":"一轮铺满科幻海报","tools":[{"t":"canvas","w":1080,"h":1920,"bg":["#05060f","#1a1040"]},{"t":"gen","id":"hero","p":"a glowing planet in deep space, cinematic, vertical","size":"720x1280"},{"t":"add","layer":{"k":"img","src":"hero","x":0,"y":0,"w":1080,"h":1920,"fit":"cover"}},{"t":"add","layer":{"k":"scrim","x":0,"y":880,"w":1080,"h":1040,"dir":"bottom","strength":0.9}},{"t":"add","layer":{"k":"text","s":"星海回声","x":540,"y":1180,"size":120,"color":"#ffffff","anchor":"ma","bold":true,"glow":"#7c3aed"}},{"t":"add","layer":{"k":"text","s":"ECHOES OF THE VOID","x":540,"y":1330,"size":40,"color":"#c4b5fd","anchor":"ma"}},{"t":"finish","src":"canvas"}]}
+A) 首轮【只】建画布，后续轮逐板块加（避免一轮输出过长被截断）：
+{"think":"先建画布","tools":[{"t":"canvas","w":1080,"h":1920,"bg":["#05060f","#1a1040"]}]}
+（下一轮再 gen 主视觉、再下一轮 add 铺底+压暗、再补文字/二维码……每轮 ≤2 个动作）
 B) 参考图做画中画·场景化嵌套（有 ref:0：男孩盯着一台斜放的电脑，屏幕里正是这张参考图）：
 思路：先自己用 rect 画一块深色屏幕面（位置/角度完全可控），再用 img 把 ref:0 缩小、圆角描边、加 persp/shear 透视贴合屏幕，嵌入时四边留内边距绝不溢出；最后压标题。若想让场景本身直接包含参考内容，可用 gen{ref:0,p} 图生图一次成型。
 {"think":"屏幕自己画，参考图透视嵌进去","tools":[{"t":"canvas","w":1080,"h":1440,"bg":["#0b1020","#1b2b4a"]},{"t":"gen","id":"room","p":"a boy from behind sitting in a dark cozy room, dim warm lamp, cinematic mood, vertical poster","size":"1024x1365"},{"t":"add","layer":{"k":"img","src":"room","x":0,"y":0,"w":1080,"h":1440,"fit":"cover"}},{"t":"add","layer":{"k":"rect","x":250,"y":470,"w":580,"h":520,"color":"#05070d","fill":true,"radius":18}},{"t":"add","layer":{"k":"img","src":"ref:0","x":300,"y":540,"w":480,"h":380,"fit":"cover","persp":0.35,"shear":0.12,"radius":8,"border":"#10182b","border_w":6,"shadow":true}},{"t":"add","layer":{"k":"text","s":"屏幕里的世界","x":540,"y":170,"size":84,"color":"#ffffff","anchor":"ma","bold":true}},{"t":"add","layer":{"k":"text","s":"A WORLD INSIDE THE SCREEN","x":540,"y":1290,"size":36,"color":"#9db4ff","anchor":"ma"}},{"t":"finish","src":"canvas"}]}
@@ -271,21 +278,53 @@ func orFloat(v, def float64) float64 {
 type planner struct {
 	cli     *client.Client
 	lastRaw string // 最近一次大模型原始输出（调试/报错定位用）
+	mu      sync.Mutex
+	lastCall time.Time // 上次 LLM 调用时刻，用于节流避免触发上游速率限制
 }
+
+// llmMinInterval 是两次 LLM 调用之间的最小间隔（节流）。
+// 上游免费账号普遍有「每分钟请求数」速率限制，Agent 自循环每轮都调 LLM，
+// 若不节流会瞬间打满触发 429 导致整轮报废。10s 间隔≈每分钟 ≤6 次，给免费额度留余量。
+const llmMinInterval = 10 * time.Second
+
+// llmMaxRetries 是遇到上游 429 时的自动退避重试上限。
+const llmMaxRetries = 5
 
 // decide 让大模型输出一轮 Turn 并严格解析。任何解析/调用失败都返回错误——无兜底、无启发式回退。
 func (p *planner) decide(base model.UpstreamModel, sys string, parts []client.ChatPart) (*Turn, error) {
-	resp, err := p.cli.Chat(client.ChatRequest{
-		Model: base,
-		Messages: []client.ChatMessage{
-			{Role: "system", Content: sys},
-			{Role: "user", Content: parts},
-		},
-		// 采样温度：模型配置里设了 temperature 就用它，否则用内置 0.5（规划要稳）。
-		Temp: orFloat(base.Temperature, 0.5),
-	})
-	if err != nil {
+	var resp string
+	var err error
+	for attempt := 0; ; attempt++ {
+		// 节流：保证与上次 LLM 调用间隔 ≥ llmMinInterval，避免瞬间打满触发上游 429。
+		p.mu.Lock()
+		if wait := time.Until(p.lastCall.Add(llmMinInterval)); wait > 0 {
+			time.Sleep(wait)
+		}
+		p.lastCall = time.Now()
+		p.mu.Unlock()
+
+		resp, err = p.cli.Chat(client.ChatRequest{
+			Model: base,
+			Messages: []client.ChatMessage{
+				{Role: "system", Content: sys},
+				{Role: "user", Content: parts},
+			},
+			// 采样温度：模型配置里设了 temperature 就用它，否则用内置 0.5（规划要稳）。
+			Temp: orFloat(base.Temperature, 0.5),
+		})
+		if err == nil {
+			break
+		}
+		// 上游速率限制 429：指数退避后重试（最多 llmMaxRetries 次），不立刻失败。
+		if strings.Contains(err.Error(), "429") && attempt < llmMaxRetries {
+			backoff := time.Duration(attempt+1) * 30 * time.Second
+			time.Sleep(backoff)
+			continue
+		}
 		return nil, fmt.Errorf("大模型调用失败: %w", err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("大模型调用失败(重试耗尽): %w", err)
 	}
 	p.lastRaw = resp
 	raw := extractJSON(resp)
