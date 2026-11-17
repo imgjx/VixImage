@@ -23,9 +23,9 @@ type Layout struct {
 	ShowThumbs  *bool    `json:"show_thumbs"`  // nil = use default (true)
 	TitleX      float64  `json:"title_x"`      // 0..1 relative position
 	TitleY      float64  `json:"title_y"`
-	TitleSize    float64 `json:"title_size"` // relative to height
-	Badge        string   `json:"badge"`
-	Footer       string   `json:"footer"`
+	TitleSize   float64  `json:"title_size"` // relative to height
+	Badge       string   `json:"badge"`
+	Footer      string   `json:"footer"`
 	// 创意效果：斜体标题 / 斜放主视觉（度数，0 不斜）
 	TitleItalic bool    `json:"title_italic"`
 	HeroRotate  float64 `json:"hero_rotate"`
@@ -219,13 +219,13 @@ func (c *Context) Compose(images []string, layout *Layout, width, height int) (s
 			"type": "text", "text": layout.Title, "x": tx, "y": ty,
 			"size": tsize, "color": textCol, "weight": "bold",
 			"italic": layout.TitleItalic,
-			"glow": "#3d8bff", "glow_size": 30,
+			"glow":   "#3d8bff", "glow_size": 30,
 			"shadow": true, "shadow_blur": 16,
 			"line_height": 1.16,
 		})
 		items = append(items, map[string]any{
 			"type": "line", "p1": []int{tx, lineY},
-			"p2": []int{tx + int(float64(width)*0.10), lineY},
+			"p2":    []int{tx + int(float64(width)*0.10), lineY},
 			"color": accent, "width": 5,
 		})
 	}
@@ -247,7 +247,7 @@ func (c *Context) Compose(images []string, layout *Layout, width, height int) (s
 	if layout.Badge != "" {
 		items = append(items, map[string]any{
 			"type": "text", "text": layout.Badge, "x": tx + 2,
-			"y": ty - int(float64(height)*0.045),
+			"y":    ty - int(float64(height)*0.045),
 			"size": int(float64(height) * 0.024), "color": accent,
 			"spacing": 2,
 		})

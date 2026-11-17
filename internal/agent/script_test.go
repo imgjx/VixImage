@@ -712,7 +712,7 @@ func TestSystemPromptCachePrefix(t *testing.T) {
 
 // TestLearningDataCreative：学习数据示范「更主动的创意实现」——画中画 / 斜放屏幕 / 参考图嵌套 / 图生图。
 func TestLearningDataCreative(t *testing.T) {
-	for _, kw := range []string{"画中画", "场景化", "ref:0", "gen", "persp", "shear", "图生图", "首轮只铺画布", "view"} {
+	for _, kw := range []string{"画中画", "场景化", "ref:0", "gen", "persp", "shear", "图生图", "首轮", "每轮", "view"} {
 		if !strings.Contains(learningData, kw) {
 			t.Fatalf("学习数据缺少创意示范关键字 %q", kw)
 		}

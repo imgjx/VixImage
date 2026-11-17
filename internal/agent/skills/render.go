@@ -44,39 +44,39 @@ type SpecItem struct {
 	Opacity float64 `json:"opacity"`
 
 	// text
-	Text        string `json:"text"`
-	Size        int    `json:"size"`
-	Color       string `json:"color"`
-	Weight      string `json:"weight"`
-	Anchor      string `json:"anchor"`
-	Spacing     int    `json:"spacing"`
+	Text        string  `json:"text"`
+	Size        int     `json:"size"`
+	Color       string  `json:"color"`
+	Weight      string  `json:"weight"`
+	Anchor      string  `json:"anchor"`
+	Spacing     int     `json:"spacing"`
 	LineHeight  float64 `json:"line_height"`
-	Mono        bool   `json:"mono"`
-	Italic      bool   `json:"italic"` // 斜体字
-	Glow        string `json:"glow"`
-	GlowSize    int    `json:"glow_size"`
-	Stroke      string `json:"stroke"`
-	StrokeWidth int    `json:"stroke_width"`
+	Mono        bool    `json:"mono"`
+	Italic      bool    `json:"italic"` // 斜体字
+	Glow        string  `json:"glow"`
+	GlowSize    int     `json:"glow_size"`
+	Stroke      string  `json:"stroke"`
+	StrokeWidth int     `json:"stroke_width"`
 
 	// scrim
 	Direction string  `json:"direction"`
 	Strength  float64 `json:"strength"`
 
 	// rect / line
-	P1    []int `json:"p1"`
-	P2    []int `json:"p2"`
-	Width int   `json:"width"`
+	P1    []int   `json:"p1"`
+	P2    []int   `json:"p2"`
+	Width int     `json:"width"`
 	Alpha float64 `json:"alpha"`
-	Fill  bool   `json:"fill"`
+	Fill  bool    `json:"fill"`
 }
 
 // Spec is the whole composition document.
 type Spec struct {
-	Width  int       `json:"width"`
-	Height int       `json:"height"`
-	BG     *BGSpec   `json:"bg"`
+	Width  int        `json:"width"`
+	Height int        `json:"height"`
+	BG     *BGSpec    `json:"bg"`
 	Items  []SpecItem `json:"items"`
-	Output string    `json:"output"`
+	Output string     `json:"output"`
 }
 
 // BGSpec describes the canvas background.
@@ -182,7 +182,7 @@ func RenderSpec(spec *Spec) (*image.RGBA, error) {
 			}
 			c.DrawText(TextOptions{
 				Text: it.Text, X: it.X, Y: it.Y, Size: it.Size,
-				Color: tc,
+				Color:  tc,
 				Weight: it.Weight, Mono: it.Mono, Anchor: it.Anchor,
 				Spacing: it.Spacing, LineHeight: it.LineHeight,
 				Italic: it.Italic, MaxWidth: maxW,

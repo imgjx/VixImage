@@ -276,9 +276,9 @@ func orFloat(v, def float64) float64 {
 
 // planner 驱动每轮的基座大模型决策。
 type planner struct {
-	cli     *client.Client
-	lastRaw string // 最近一次大模型原始输出（调试/报错定位用）
-	mu      sync.Mutex
+	cli      *client.Client
+	lastRaw  string // 最近一次大模型原始输出（调试/报错定位用）
+	mu       sync.Mutex
 	lastCall time.Time // 上次 LLM 调用时刻，用于节流避免触发上游速率限制
 }
 

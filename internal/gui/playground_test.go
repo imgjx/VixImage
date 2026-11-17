@@ -138,13 +138,13 @@ func TestPlaygroundAgentRunsMyModel(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	var out struct {
-		OK      bool     `json:"ok"`
-		Error   string   `json:"error"`
-		Images  []string `json:"images"`
-		Log     []string `json:"log"`
-		Steps   int      `json:"steps_used"`
-		Status  string   `json:"status"`
-		Trace   []model.TraceStep `json:"trace"`
+		OK     bool              `json:"ok"`
+		Error  string            `json:"error"`
+		Images []string          `json:"images"`
+		Log    []string          `json:"log"`
+		Steps  int               `json:"steps_used"`
+		Status string            `json:"status"`
+		Trace  []model.TraceStep `json:"trace"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatal(err)

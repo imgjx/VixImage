@@ -1,9 +1,9 @@
 package skills
 
 import (
-	"image/png"
 	"image"
 	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"

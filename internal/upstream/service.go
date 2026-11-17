@@ -119,9 +119,9 @@ func (s *Service) Save(m *model.UpstreamModel) error {
 	return s.store.SaveUpstream(m)
 }
 
-func (s *Service) Get(id int64) (*model.UpstreamModel, error)   { return s.store.GetUpstream(id) }
-func (s *Service) List() ([]model.UpstreamModel, error)         { return s.store.ListUpstream() }
-func (s *Service) Delete(id int64) error                        { return s.store.DeleteUpstream(id) }
+func (s *Service) Get(id int64) (*model.UpstreamModel, error) { return s.store.GetUpstream(id) }
+func (s *Service) List() ([]model.UpstreamModel, error)       { return s.store.ListUpstream() }
+func (s *Service) Delete(id int64) error                      { return s.store.DeleteUpstream(id) }
 
 // ImageModels returns enabled image-generation upstream models.
 func (s *Service) ImageModels() ([]model.UpstreamModel, error) {

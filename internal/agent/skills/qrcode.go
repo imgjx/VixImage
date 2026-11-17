@@ -1,10 +1,10 @@
 package skills
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/color"
-	"bytes"
 	"os"
 
 	skipqrcode "github.com/skip2/go-qrcode"

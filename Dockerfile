@@ -25,7 +25,7 @@ RUN go mod download
 # 再拷源码并编译
 COPY . .
 
-ARG VERSION=0.1.0
+ARG VERSION=0.1.4
 # -s -w 去符号表与调试信息，减小体积
 RUN CGO_ENABLED=0 GOOS=linux go build \
       -ldflags "-s -w -X main.Version=${VERSION}" \

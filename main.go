@@ -259,5 +259,3 @@ func clip(s string, n int) string {
 	}
 	return s
 }
-
-var _ = strings.TrimSpace

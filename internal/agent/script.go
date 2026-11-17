@@ -98,19 +98,19 @@ type Tool struct {
 
 // 工具类型常量。
 const (
-	ToolCanvas = "canvas"
-	ToolGen    = "gen"
+	ToolCanvas   = "canvas"
+	ToolGen      = "gen"
 	ToolQrcode   = "qrcode"
 	ToolQrdecode = "qrdecode"
-	ToolAdd    = "add"
-	ToolSet    = "set"
-	ToolDel    = "del"
-	ToolClear  = "clear"
-	ToolCopy   = "copy"
-	ToolUndo   = "undo"
-	ToolLayers = "layers"
-	ToolView   = "view"
-	ToolFinish = "finish"
+	ToolAdd      = "add"
+	ToolSet      = "set"
+	ToolDel      = "del"
+	ToolClear    = "clear"
+	ToolCopy     = "copy"
+	ToolUndo     = "undo"
+	ToolLayers   = "layers"
+	ToolView     = "view"
+	ToolFinish   = "finish"
 )
 
 // Tool.UnmarshalJSON 把一轮工具调用宽松地解析成 Tool。

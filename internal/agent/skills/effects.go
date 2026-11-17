@@ -240,7 +240,7 @@ func shearLayer(src *image.RGBA, k float64) *image.RGBA {
 			if c.A == 0 {
 				continue
 			}
-			nx := int(math.Round(float64(x) + offset)) + leftPad
+			nx := int(math.Round(float64(x)+offset)) + leftPad
 			if nx < 0 || nx >= ow {
 				continue
 			}
