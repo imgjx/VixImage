@@ -1,6 +1,6 @@
 # VixImage
 
-[中文](README_zh.md) · English
+English · [中文](README_zh.md)
 
 A **self-looping image-editing Agent written in Go**: give it a prompt, and a multimodal LLM enters an `observe → decide → act` loop, emitting one `{think, tools[]}` per turn. The executor strictly parses and runs a batch of **image-only** skills, and a native Go render engine composes the final image. It has an explicit completion signal (`finish`) and can repeatedly **view its own work** (`view`) before revising.
 
