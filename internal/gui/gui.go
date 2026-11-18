@@ -68,16 +68,37 @@ var loginTmpl = template.Must(template.ParseFS(webFS, "web/login.html"))
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	// pages
+	// pages —— Vue3 SPA（history 路由）；所有页面路径统一返回同一个 index.html。
 	mux.HandleFunc("/login", s.handleLogin)
 	mux.HandleFunc("/session.js", s.page("web/session.js"))
-	mux.HandleFunc("/", s.auth(s.page("web/index.html")))
-	mux.HandleFunc("/overview", s.auth(s.page("web/overview.html")))
-	mux.HandleFunc("/mymodels", s.auth(s.page("web/mymodels.html")))
-	mux.HandleFunc("/upstream", s.auth(s.page("web/upstream.html")))
-	mux.HandleFunc("/config", s.auth(s.page("web/config.html")))
-	mux.HandleFunc("/apikeys", s.auth(s.page("web/apikeys.html")))
-	mux.HandleFunc("/playground", s.auth(s.page("web/playground.html")))
+	mux.HandleFunc("/favicon.png", s.page("web/favicon.png"))
+	// 静态资源（app.[hash].js / css 等），无需鉴权即可加载。
+	mux.HandleFunc("/assets/", func(w http.ResponseWriter, r *http.Request) {
+		name := "web" + strings.TrimPrefix(r.URL.Path, "")
+		b, err := webFS.ReadFile(name)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		ct := "application/octet-stream"
+		switch {
+		case strings.HasSuffix(name, ".js"):
+			ct = "application/javascript"
+		case strings.HasSuffix(name, ".css"):
+			ct = "text/css"
+		case strings.HasSuffix(name, ".png"):
+			ct = "image/png"
+		case strings.HasSuffix(name, ".svg"):
+			ct = "image/svg+xml"
+		}
+		w.Header().Set("Content-Type", ct)
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Write(b)
+	})
+	spa := s.auth(s.page("web/index.html"))
+	for _, p := range []string{"/", "/overview", "/mymodels", "/upstream", "/config", "/apikeys", "/playground"} {
+		mux.HandleFunc(p, spa)
+	}
 	// api
 	mux.HandleFunc("/api/login", s.apiLogin)
 	mux.HandleFunc("/api/session", s.apiSession)
@@ -126,10 +147,15 @@ func (s *Server) page(name string) http.HandlerFunc {
 			return
 		}
 		ct := "text/html; charset=utf-8"
-		if strings.HasSuffix(name, ".css") {
+		switch {
+		case strings.HasSuffix(name, ".css"):
 			ct = "text/css"
-		} else if strings.HasSuffix(name, ".js") {
+		case strings.HasSuffix(name, ".js"):
 			ct = "application/javascript"
+		case strings.HasSuffix(name, ".png"):
+			ct = "image/png"
+		case strings.HasSuffix(name, ".svg"):
+			ct = "image/svg+xml"
 		}
 		w.Header().Set("Content-Type", ct)
 		w.Write(b)
@@ -464,20 +490,23 @@ func (s *Server) apiAgentsByID(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		writeJSON(w, 200, map[string]any{
-			"gui_port":       s.cfg.GUIPort,
-			"api_port":       s.cfg.APIPort,
-			"storage_mode":   s.cfg.StorageMode,
-			"sqlite_path":    s.cfg.SQLitePath,
-			"mysql_dsn":      s.cfg.MySQLDSN,
-			"cache_mode":     s.cfg.CacheMode,
-			"redis_addr":     s.cfg.RedisAddr,
-			"redis_pass":     s.cfg.RedisPass,
-			"redis_db":       s.cfg.RedisDB,
-			"gui_user":       s.cfg.GUIUser,
-			"data_dir":       s.cfg.DataDir,
-			"python_bin":     s.cfg.PythonBin,
-			"image_engine":   s.cfg.ImageEngine,
-			"delete_outputs": s.cfg.DeleteOutputs,
+			"gui_port":             s.cfg.GUIPort,
+			"api_port":             s.cfg.APIPort,
+			"storage_mode":         s.cfg.StorageMode,
+			"sqlite_path":          s.cfg.SQLitePath,
+			"mysql_dsn":            s.cfg.MySQLDSN,
+			"cache_mode":           s.cfg.CacheMode,
+			"redis_addr":           s.cfg.RedisAddr,
+			"redis_pass":           s.cfg.RedisPass,
+			"redis_db":             s.cfg.RedisDB,
+			"gui_user":             s.cfg.GUIUser,
+			"data_dir":             s.cfg.DataDir,
+			"python_bin":           s.cfg.PythonBin,
+			"image_engine":         s.cfg.ImageEngine,
+			"delete_outputs":       s.cfg.DeleteOutputs,
+			"stock_openverse_base": s.cfg.StockOpenverseBase,
+			"stock_pexels_key":     s.cfg.StockPexelsKey,
+			"stock_pixabay_key":    s.cfg.StockPixabayKey,
 		})
 		return
 	}
@@ -511,6 +540,16 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 		// 生产完成并提取后是否删除产物（中间产物永远 100% 删除）。
 		if v, ok := b["delete_outputs"].(bool); ok {
 			s.cfg.DeleteOutputs = v
+		}
+		// 素材库（stock 技能）密钥与自定义端点。
+		if v, ok := b["stock_openverse_base"].(string); ok {
+			s.cfg.StockOpenverseBase = strings.TrimSpace(v)
+		}
+		if v, ok := b["stock_pexels_key"].(string); ok {
+			s.cfg.StockPexelsKey = strings.TrimSpace(v)
+		}
+		if v, ok := b["stock_pixabay_key"].(string); ok {
+			s.cfg.StockPixabayKey = strings.TrimSpace(v)
 		}
 		if err := s.cfg.Save(); err != nil {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})

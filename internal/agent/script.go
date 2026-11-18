@@ -42,6 +42,7 @@ type Turn struct {
 //
 //	canvas 建立/重设画布         w,h,bg,angle,solid
 //	gen    生成一张图片(有产物)   id,p,size,engine,ref
+//	stock  搜索免版权图库(有产物)   id,q,site,n  ← Openverse/Pexels/Pixabay
 //	qrcode 生成二维码(有产物)      id,text,size,fg,bg
 //	qrdecode 解析二维码内容        src
 //	add    追加一个图层           layer
@@ -80,6 +81,10 @@ type Tool struct {
 	FG   string `json:"fg"`
 	Bg   string `json:"-"`
 
+	// stock —— Q 搜索词，Site 图库(openverse/pexels/pixabay)，N 复用为期望张数。
+	Q    string `json:"q"`
+	Site string `json:"site"`
+
 	// add / set / del —— Layers 由解析层在 layer 写成数组时展开（一轮可一次加多个图层）。
 	Layer  *LayerSpec  `json:"layer"`
 	Layers []LayerSpec `json:"-"`
@@ -100,6 +105,7 @@ type Tool struct {
 const (
 	ToolCanvas   = "canvas"
 	ToolGen      = "gen"
+	ToolStock    = "stock"
 	ToolQrcode   = "qrcode"
 	ToolQrdecode = "qrdecode"
 	ToolAdd      = "add"
@@ -202,7 +208,7 @@ func isBottomTool(t string) bool { return t == ToolView || t == ToolFinish }
 // hasImageOutput 报告该工具是否会产生「可回灌给大模型的图像输出」。
 // 定稿规则：只有 GenImage 图像生成 与 图像查看(view) 会输出结果图，
 // 其余编辑类工具（含 copy/undo/layers）只回「是否成功编辑」的状态文本。
-func hasImageOutput(t string) bool { return t == ToolGen || t == ToolView }
+func hasImageOutput(t string) bool { return t == ToolGen || t == ToolStock || t == ToolView }
 
 // copyDest 取 copy 的新产物 id：优先 as，其次沿用 gen 习惯的 id。
 func copyDest(t Tool) string {
@@ -216,7 +222,7 @@ func copyDest(t Tool) string {
 // view/finish 只读或收尾，layers/undo 不改状态，均不算编辑。
 func isEditingTool(t string) bool {
 	switch t {
-	case ToolCanvas, ToolGen, ToolAdd, ToolSet, ToolDel, ToolClear, ToolCopy, ToolQrcode:
+	case ToolCanvas, ToolGen, ToolStock, ToolAdd, ToolSet, ToolDel, ToolClear, ToolCopy, ToolQrcode:
 		return true
 	}
 	return false
@@ -282,6 +288,16 @@ func validateTurn(t *Turn, nInputs int) error {
 			}
 			if tool.Ref != nil && (*tool.Ref < 0 || *tool.Ref >= nInputs) {
 				return fmt.Errorf("tools[%d] gen.ref=%d 越界（输入图共 %d 张）", i, *tool.Ref, nInputs)
+			}
+		case ToolStock:
+			if strings.TrimSpace(tool.ID) == "" {
+				return fmt.Errorf("tools[%d] stock 缺少 id", i)
+			}
+			if strings.TrimSpace(tool.Q) == "" {
+				return fmt.Errorf("tools[%d] stock 缺少 q（搜索关键词）", i)
+			}
+			if tool.N > 8 {
+				return fmt.Errorf("tools[%d] stock 张数 n=%d 过大（上限 8）", i, tool.N)
 			}
 		case ToolQrcode:
 			if strings.TrimSpace(tool.ID) == "" {
@@ -376,6 +392,8 @@ func normTool(t string) string {
 		return ToolCanvas
 	case ToolGen, "genimage", "generate":
 		return ToolGen
+	case ToolStock, "searchstock", "stockimage", "素材", "素材库", "搜图", "找图":
+		return ToolStock
 	case ToolQrcode, "qr", "二维码", "生成二维码":
 		return ToolQrcode
 	case ToolQrdecode, "qr_scan", "qrdecode_image", "解析二维码", "扫码":
@@ -643,6 +661,8 @@ func (s *renderState) assetTable() string {
 			kind = "用户参考图"
 		case "gen":
 			kind = "生成图"
+		case "stock":
+			kind = "素材图"
 		case "edit":
 			kind = "中间产物"
 		}

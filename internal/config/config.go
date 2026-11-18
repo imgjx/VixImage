@@ -53,6 +53,11 @@ type Config struct {
 	// false（默认）= 成品保留在 outputs；true = 提取后连成品一起删除
 	// （工作区中间产物则无论开关如何都 100% 删除）。
 	DeleteOutputs bool `json:"delete_outputs"`
+
+	// 素材库（stock 技能）各图库密钥。Openverse 免密钥；Pexels/Pixabay 需各自申请。
+	StockOpenverseBase string `json:"stock_openverse_base"` // 可选自定义 Openverse 端点
+	StockPexelsKey     string `json:"stock_pexels_key"`
+	StockPixabayKey    string `json:"stock_pixabay_key"`
 }
 
 // Default returns a config populated with sensible defaults.

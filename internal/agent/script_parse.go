@@ -164,6 +164,13 @@ func fillTool(t *Tool, m map[string]json.RawMessage) {
 	if v, ok := g("n", "steps_back", "back"); ok {
 		t.N = int(numToFloat(v))
 	}
+	// stock —— 搜索词与图库来源（n 复用为期望张数）。
+	if v, ok := g("q", "query", "keyword", "keywords", "search"); ok {
+		t.Q = toStr(v)
+	}
+	if v, ok := g("site", "source", "library", "provider"); ok {
+		t.Site = toStr(v)
+	}
 	if v, ok := g("as", "to", "new_id", "dest", "copy_to"); ok {
 		t.As = toStr(v)
 	}

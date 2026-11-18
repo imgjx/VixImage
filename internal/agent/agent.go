@@ -445,6 +445,43 @@ func (r *Runtime) Run(req RunRequest) (*RunResult, error) {
 					input = req.InputImages[*tool.Ref]
 				}
 				jobs = append(jobs, genJob{tool, *um, cost, size, input})
+			case ToolStock:
+				// 搜索免版权图库（零步消耗）：下载图片登记为产物，可被 img 图层 src 引用。
+				n := tool.N
+				if n <= 0 {
+					n = 1
+				}
+				found, e := skills.SearchStock(tool.Site, tool.Q, n, skills.StockConfig{
+					Pexels:        r.cfg.StockPexelsKey,
+					Pixabay:       r.cfg.StockPixabayKey,
+					OpenverseBase: r.cfg.StockOpenverseBase,
+				})
+				if e != nil {
+					return r.fail(log, res, fmt.Errorf("第 %d 步 stock「%s」: %w", step, tool.ID, e))
+				}
+				for k, im := range found {
+					pth, e := r.materialize(im.URL, tmpDir, "stock")
+					if e != nil || pth == "" {
+						return r.fail(log, res, fmt.Errorf("第 %d 步 stock 下载第 %d 张失败: %v", step, k+1, e))
+					}
+					assetID := tool.ID
+					if k > 0 {
+						assetID = fmt.Sprintf("%s_%d", tool.ID, k)
+					}
+					desc := fmt.Sprintf("素材 %s/%s", im.Source, truncateStr(im.Title, 30))
+					if im.Author != "" {
+						desc += " @" + truncateStr(im.Author, 20)
+					}
+					if e := st.addAsset(assetID, &assetEntry{Path: pth, Kind: "stock", Desc: desc}); e != nil {
+						return r.fail(log, res, fmt.Errorf("第 %d 步 stock: %w", step, e))
+					}
+					uri, e := encodeImageDataURI(pth, 1024)
+					if e == nil {
+						outImages = append(outImages, uri)
+					}
+					ops = append(ops, fmt.Sprintf("stock %s", assetID))
+					outDesc = append(outDesc, fmt.Sprintf("已获取素材 %s（%s，见附图）", assetID, im.Source))
+				}
 			case ToolQrcode:
 				// 生成二维码 → 登记为产物（零步消耗），可当 img 图层 src 嵌进海报。
 				size := 512

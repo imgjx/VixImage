@@ -2,6 +2,7 @@
 /viximage
 *.exe
 /dist/
+front/node_modules/
 *.test
 *.out
 

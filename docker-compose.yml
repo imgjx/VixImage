@@ -3,8 +3,8 @@ services:
     build:
       context: .
       args:
-        VERSION: "0.1.4"
-    image: viximage:0.1.4
+        VERSION: "0.2.0"
+    image: viximage:0.2.0
     container_name: viximage
     restart: unless-stopped
     ports:
