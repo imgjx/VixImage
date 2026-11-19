@@ -309,6 +309,7 @@ func (r *Runtime) Run(req RunRequest) (*RunResult, error) {
 		var outImages []string // 本轮产生的输出图（仅 gen / view）
 		var outDesc []string
 		roundLayerList := "" // layers 工具产出的图层清单文本
+		roundOCRText := ""   // ocr 工具识别出的文字（完整回灌下一轮决策）
 		roundFinished := false
 		finishSrc := ""
 
@@ -524,6 +525,59 @@ func (r *Runtime) Run(req RunRequest) (*RunResult, error) {
 					return r.fail(log, res, fmt.Errorf("第 %d 步 qrdecode(%s): %w", step, tool.Src, e))
 				}
 				ops = append(ops, fmt.Sprintf("qrdecode(%s)→%q", tool.Src, truncateStr(text, 200)))
+			case ToolOCR:
+				// PaddleOCR 识别图片文字（只读）：解析引用→识别→文本回灌下一轮决策。
+				var srcPath string
+				if strings.EqualFold(strings.TrimSpace(tool.Src), "canvas") {
+					tmp := filepath.Join(ws, fmt.Sprintf("ocr_%d_%d.png", step, time.Now().UnixNano()))
+					pth, e := renderCurrent(tmp)
+					if e != nil {
+						return r.fail(log, res, fmt.Errorf("第 %d 步 ocr(canvas): %w", step, e))
+					}
+					srcPath = pth
+				} else {
+					pth, e := resolve(tool.Src)
+					if e != nil {
+						return r.fail(log, res, fmt.Errorf("第 %d 步 ocr(%s): %w", step, tool.Src, e))
+					}
+					srcPath = pth
+				}
+				lang := tool.Lang
+				if lang == "" {
+					lang = r.cfg.OCRLang
+				}
+				text, e := skills.RecognizeText(r.cfg.PythonBin, lang, srcPath, tmpDir)
+				if e != nil {
+					return r.fail(log, res, fmt.Errorf("第 %d 步 ocr(%s): %w", step, tool.Src, e))
+				}
+				// 识别文本完整回灌下一轮（不附图，纯文本进 lastResult 的独立段）。
+				roundOCRText = fmt.Sprintf("[OCR识别 %s]\n%s", tool.Src, text)
+				ops = append(ops, fmt.Sprintf("ocr(%s)→%q", tool.Src, truncateStr(text, 200)))
+			case ToolHTMLRender:
+				// HTML 渲染成图片 → 登记为产物（零步消耗），可当 img 图层 src 嵌进海报。
+				w, h := tool.W, tool.H
+				if w == 0 {
+					w = 1080
+				}
+				if h == 0 {
+					h = 1920
+				}
+				pngPath, e := skills.RenderHTML(tool.HTML, r.cfg.ChromeBin, tmpDir, w, h)
+				if e != nil {
+					return r.fail(log, res, fmt.Errorf("第 %d 步 htmlrender「%s」: %w", step, tool.ID, e))
+				}
+				if e := st.addAsset(tool.ID, &assetEntry{
+					Path: pngPath, Kind: "html", Size: fmt.Sprintf("%dx%d", w, h),
+					Desc: fmt.Sprintf("HTML渲染 %dx%d", w, h),
+				}); e != nil {
+					return r.fail(log, res, fmt.Errorf("第 %d 步 htmlrender: %w", step, e))
+				}
+				uri, e := encodeImageDataURI(pngPath, 1024)
+				if e == nil {
+					outImages = append(outImages, uri)
+					outDesc = append(outDesc, fmt.Sprintf("已渲染 HTML 产物 %s（见附图）", tool.ID))
+				}
+				ops = append(ops, fmt.Sprintf("htmlrender %s", tool.ID))
 			case ToolView:
 				// 链底工具：查看 canvas 或指定产物（可多张），产出结果图回灌下一轮。
 				for i, s := range tool.Srcs {
@@ -608,7 +662,7 @@ func (r *Runtime) Run(req RunRequest) (*RunResult, error) {
 		logFn("[第 %d 步] 💭 %s ｜ 操作：%s ｜ 消耗 %d/%d 步",
 			step, orStr(truncateStr(turn.Think, 40), "（无）"), orStr(strings.Join(ops, " · "), "无"), used, budget)
 
-		// ---- 5. 组装「上一轮结果」：只有 gen/view 产生输出图；编辑轮只回状态文本 ----
+		// ---- 5. 组装「上一轮结果」：只有 gen/view/htmlrender 产生输出图；编辑轮只回状态文本 ----
 		if len(outImages) > 0 {
 			if len(outImages) > MaxOutputPerView {
 				outImages = outImages[:MaxOutputPerView]
@@ -617,11 +671,17 @@ func (r *Runtime) Run(req RunRequest) (*RunResult, error) {
 			if roundLayerList != "" {
 				lastResult += "\n" + roundLayerList
 			}
+			if roundOCRText != "" {
+				lastResult += "\n" + roundOCRText
+			}
 			lastImages = outImages
 		} else {
 			status := "编辑成功：" + orStr(strings.Join(ops, " · "), "无操作")
 			if roundLayerList != "" {
 				status += "\n[图层清单]\n" + roundLayerList
+			}
+			if roundOCRText != "" {
+				status += "\n" + roundOCRText
 			}
 			lastResult = status
 			lastImages = nil

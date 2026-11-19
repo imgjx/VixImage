@@ -507,6 +507,8 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 			"stock_openverse_base": s.cfg.StockOpenverseBase,
 			"stock_pexels_key":     s.cfg.StockPexelsKey,
 			"stock_pixabay_key":    s.cfg.StockPixabayKey,
+			"ocr_lang":             s.cfg.OCRLang,
+			"chrome_bin":           s.cfg.ChromeBin,
 		})
 		return
 	}
@@ -550,6 +552,15 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		if v, ok := b["stock_pixabay_key"].(string); ok {
 			s.cfg.StockPixabayKey = strings.TrimSpace(v)
+		}
+		if v, ok := b["ocr_lang"].(string); ok {
+			s.cfg.OCRLang = strings.TrimSpace(v)
+			if s.cfg.OCRLang == "" {
+				s.cfg.OCRLang = "ch"
+			}
+		}
+		if v, ok := b["chrome_bin"].(string); ok {
+			s.cfg.ChromeBin = strings.TrimSpace(v)
 		}
 		if err := s.cfg.Save(); err != nil {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})

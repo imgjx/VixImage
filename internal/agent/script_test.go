@@ -813,3 +813,55 @@ func TestLearningSwitch(t *testing.T) {
 		t.Fatal("关闭学习数据时 system 前缀应更短")
 	}
 }
+
+// TestOCRAndHTMLRenderTool：ocr / htmlrender 工具的解析、别名、校验与回灌分类。
+func TestOCRAndHTMLRenderTool(t *testing.T) {
+	raw := `{"tools":[
+		{"t":"ocr","src":"ref:0","lang":"en"},
+		{"t":"htmlrender","id":"card","html":"<h1>Hello</h1>","w":800,"h":600}
+	]}`
+	var turn Turn
+	if err := json.Unmarshal([]byte(raw), &turn); err != nil {
+		t.Fatalf("解析 ocr/htmlrender 失败: %v", err)
+	}
+	if len(turn.Tools) != 2 {
+		t.Fatalf("工具数=%d 期望 2", len(turn.Tools))
+	}
+	if normTool(turn.Tools[0].T) != ToolOCR || turn.Tools[0].Src != "ref:0" || turn.Tools[0].Lang != "en" {
+		t.Fatalf("ocr 解析错误: %+v", turn.Tools[0])
+	}
+	if normTool(turn.Tools[1].T) != ToolHTMLRender || turn.Tools[1].ID != "card" || turn.Tools[1].W != 800 {
+		t.Fatalf("htmlrender 解析错误: %+v", turn.Tools[1])
+	}
+	if err := validateTurn(&turn, 1); err != nil {
+		t.Fatalf("合法 ocr/htmlrender 不应报错: %v", err)
+	}
+	if !hasImageOutput(ToolHTMLRender) {
+		t.Fatal("htmlrender 应产生可回灌的图像输出")
+	}
+	if hasImageOutput(ToolOCR) {
+		t.Fatal("ocr 只读、不产生图像输出")
+	}
+	if !isEditingTool(ToolHTMLRender) {
+		t.Fatal("htmlrender 加产物应算编辑工具")
+	}
+
+	// 别名：文字识别 / 网页渲染。
+	if normTool("文字识别") != ToolOCR || normTool("html2img") != ToolHTMLRender {
+		t.Fatal("ocr/htmlrender 别名未生效")
+	}
+
+	// 缺字段、非法尺寸应报错（无兜底）。
+	bad := `{"tools":[{"t":"htmlrender","id":"x","html":"<b>x</b>","w":100}]}`
+	var t2 Turn
+	_ = json.Unmarshal([]byte(bad), &t2)
+	if err := validateTurn(&t2, 0); err == nil {
+		t.Fatal("htmlrender 宽 100 < 200 应报错")
+	}
+	bad2 := `{"tools":[{"t":"ocr"}]}`
+	var t3 Turn
+	_ = json.Unmarshal([]byte(bad2), &t3)
+	if err := validateTurn(&t3, 0); err == nil {
+		t.Fatal("ocr 缺 src 应报错")
+	}
+}

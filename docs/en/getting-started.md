@@ -27,11 +27,11 @@ GUI console defaults to `http://localhost:8080` (login required); API service de
 A multi-stage `Dockerfile` is provided (build: golang:1.21-alpine; run: alpine with optional Python/PIL engine and CJK fonts).
 
 ```bash
-docker build -t viximage:0.2.0 --build-arg VERSION=0.2.0 .
+docker build -t viximage:0.2.1 --build-arg VERSION=0.2.1 .
 docker run -d --name viximage \
   -p 8080:8080 -p 8090:8090 \
   -v viximage-data:/data \
-  viximage:0.2.0
+  viximage:0.2.1
 ```
 
 Or with compose:

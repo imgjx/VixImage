@@ -74,6 +74,8 @@ export const zh = {
     accountTip: '修改账号密码', stock: '素材库密钥',
     stockOpenverse: 'Openverse 端点(可选)', stockPexels: 'Pexels API Key', stockPixabay: 'Pixabay API Key',
     stockTip: 'Openverse 免密钥；Pexels / Pixabay 需自行申请 API Key',
+    ocrHtml: 'OCR 与 HTML 渲染', ocrLang: 'OCR 识别语言', chromeBin: 'Chrome 路径(可选，留空自动探测)',
+    ocrHtmlTip: 'OCR 需 pip install paddleocr paddlepaddle；HTML 渲染需安装 Chrome/Chromium（留空自动探测）',
     accountUpdated: '账号已更新', restartNote: '部分配置(存储/缓存模式)重启后生效'
   },
   playground: {
@@ -162,6 +164,8 @@ export const en = {
     accountTip: 'Change account / password', stock: 'Stock Library Keys',
     stockOpenverse: 'Openverse Endpoint (optional)', stockPexels: 'Pexels API Key', stockPixabay: 'Pixabay API Key',
     stockTip: 'Openverse needs no key; Pexels / Pixabay need your own API Key',
+    ocrHtml: 'OCR & HTML Rendering', ocrLang: 'OCR Language', chromeBin: 'Chrome Path (optional, auto-detect if blank)',
+    ocrHtmlTip: 'OCR needs: pip install paddleocr paddlepaddle; HTML rendering needs Chrome/Chromium (auto-detect if blank)',
     accountUpdated: 'Account updated', restartNote: 'Some settings (storage/cache) apply after restart'
   },
   playground: {

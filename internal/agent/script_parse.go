@@ -171,6 +171,14 @@ func fillTool(t *Tool, m map[string]json.RawMessage) {
 	if v, ok := g("site", "source", "library", "provider"); ok {
 		t.Site = toStr(v)
 	}
+	// ocr —— 识别语言（ch/en/...）。
+	if v, ok := g("lang", "language"); ok {
+		t.Lang = toStr(v)
+	}
+	// htmlrender —— HTML 字符串（兼容 html_content / markup 别名）。
+	if v, ok := g("html", "html_content", "markup"); ok {
+		t.HTML = toStr(v)
+	}
 	if v, ok := g("as", "to", "new_id", "dest", "copy_to"); ok {
 		t.As = toStr(v)
 	}

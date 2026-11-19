@@ -17,13 +17,14 @@ import (
 const (
 	StepPerLLMCall   = 1
 	DefaultMaxSteps  = 100
-	MaxTextRunes     = 240 // 单个 text 图层文本上限（防"满屏重复字符"注入）
-	MaxUndoSteps     = 24  // undo 单次回滚步数上限
-	MaxLayerCount    = 80  // 画布图层总数上限
-	MaxQRText        = 800 // 单个二维码内容字符上限
-	MaxOutputPerView = 6   // 单次回灌给大模型的图片数上限
-	DefaultGenCost   = 30  // 引擎未配置时的默认生图消耗步数
-	MaxForceReviews  = 3   // 交付前「系统级强制 view」最多回看次数（防小模型反复改动耗光步数）
+	MaxTextRunes     = 240   // 单个 text 图层文本上限（防"满屏重复字符"注入）
+	MaxUndoSteps     = 24    // undo 单次回滚步数上限
+	MaxLayerCount    = 80    // 画布图层总数上限
+	MaxQRText        = 800   // 单个二维码内容字符上限
+	MaxHTMLRunes     = 40000 // 单个 htmlrender 的 HTML 字符串字符上限（防注入/爆量）
+	MaxOutputPerView = 6     // 单次回灌给大模型的图片数上限
+	DefaultGenCost   = 30    // 引擎未配置时的默认生图消耗步数
+	MaxForceReviews  = 3     // 交付前「系统级强制 view」最多回看次数（防小模型反复改动耗光步数）
 )
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,8 @@ type Turn struct {
 //	stock  搜索免版权图库(有产物)   id,q,site,n  ← Openverse/Pexels/Pixabay
 //	qrcode 生成二维码(有产物)      id,text,size,fg,bg
 //	qrdecode 解析二维码内容        src
+//	ocr    PaddleOCR 识别图片文字(只读) src,lang ← 文本回灌下一轮
+//	htmlrender HTML 渲染成图片(有产物) id,html,w,h ← Chrome 无头截图
 //	add    追加一个图层           layer
 //	set    替换第 i 个图层        i,layer
 //	del    删除第 i 个图层        i
@@ -85,6 +88,12 @@ type Tool struct {
 	Q    string `json:"q"`
 	Site string `json:"site"`
 
+	// ocr —— Src 为图片引用（产物 id / canvas / ref:N / 网址），Lang 为识别语言。
+	Lang string `json:"lang"`
+
+	// htmlrender —— HTML 是要渲染的 HTML 字符串；W/H 为输出画布尺寸。
+	HTML string `json:"html"`
+
 	// add / set / del —— Layers 由解析层在 layer 写成数组时展开（一轮可一次加多个图层）。
 	Layer  *LayerSpec  `json:"layer"`
 	Layers []LayerSpec `json:"-"`
@@ -103,20 +112,22 @@ type Tool struct {
 
 // 工具类型常量。
 const (
-	ToolCanvas   = "canvas"
-	ToolGen      = "gen"
-	ToolStock    = "stock"
-	ToolQrcode   = "qrcode"
-	ToolQrdecode = "qrdecode"
-	ToolAdd      = "add"
-	ToolSet      = "set"
-	ToolDel      = "del"
-	ToolClear    = "clear"
-	ToolCopy     = "copy"
-	ToolUndo     = "undo"
-	ToolLayers   = "layers"
-	ToolView     = "view"
-	ToolFinish   = "finish"
+	ToolCanvas     = "canvas"
+	ToolGen        = "gen"
+	ToolStock      = "stock"
+	ToolQrcode     = "qrcode"
+	ToolQrdecode   = "qrdecode"
+	ToolOCR        = "ocr"
+	ToolHTMLRender = "htmlrender"
+	ToolAdd        = "add"
+	ToolSet        = "set"
+	ToolDel        = "del"
+	ToolClear      = "clear"
+	ToolCopy       = "copy"
+	ToolUndo       = "undo"
+	ToolLayers     = "layers"
+	ToolView       = "view"
+	ToolFinish     = "finish"
 )
 
 // Tool.UnmarshalJSON 把一轮工具调用宽松地解析成 Tool。
@@ -208,7 +219,9 @@ func isBottomTool(t string) bool { return t == ToolView || t == ToolFinish }
 // hasImageOutput 报告该工具是否会产生「可回灌给大模型的图像输出」。
 // 定稿规则：只有 GenImage 图像生成 与 图像查看(view) 会输出结果图，
 // 其余编辑类工具（含 copy/undo/layers）只回「是否成功编辑」的状态文本。
-func hasImageOutput(t string) bool { return t == ToolGen || t == ToolStock || t == ToolView }
+func hasImageOutput(t string) bool {
+	return t == ToolGen || t == ToolStock || t == ToolView || t == ToolHTMLRender
+}
 
 // copyDest 取 copy 的新产物 id：优先 as，其次沿用 gen 习惯的 id。
 func copyDest(t Tool) string {
@@ -222,7 +235,7 @@ func copyDest(t Tool) string {
 // view/finish 只读或收尾，layers/undo 不改状态，均不算编辑。
 func isEditingTool(t string) bool {
 	switch t {
-	case ToolCanvas, ToolGen, ToolStock, ToolAdd, ToolSet, ToolDel, ToolClear, ToolCopy, ToolQrcode:
+	case ToolCanvas, ToolGen, ToolStock, ToolAdd, ToolSet, ToolDel, ToolClear, ToolCopy, ToolQrcode, ToolHTMLRender:
 		return true
 	}
 	return false
@@ -313,6 +326,23 @@ func validateTurn(t *Turn, nInputs int) error {
 			if strings.TrimSpace(tool.Src) == "" {
 				return fmt.Errorf("tools[%d] qrdecode 缺少 src（产物 id / canvas / 图片网址）", i)
 			}
+		case ToolOCR:
+			if strings.TrimSpace(tool.Src) == "" {
+				return fmt.Errorf("tools[%d] ocr 缺少 src（产物 id / canvas / ref:N / 图片网址）", i)
+			}
+		case ToolHTMLRender:
+			if strings.TrimSpace(tool.ID) == "" {
+				return fmt.Errorf("tools[%d] htmlrender 缺少 id", i)
+			}
+			if strings.TrimSpace(tool.HTML) == "" {
+				return fmt.Errorf("tools[%d] htmlrender 缺少 html（要渲染的 HTML 字符串）", i)
+			}
+			if len([]rune(tool.HTML)) > MaxHTMLRunes {
+				return fmt.Errorf("tools[%d] htmlrender HTML 长度 %d 超过上限 %d", i, len([]rune(tool.HTML)), MaxHTMLRunes)
+			}
+			if (tool.W != 0 && (tool.W < 200 || tool.W > 4096)) || (tool.H != 0 && (tool.H < 200 || tool.H > 4096)) {
+				return fmt.Errorf("tools[%d] htmlrender 宽高非法（200~4096，0 取默认）：%dx%d", i, tool.W, tool.H)
+			}
 		case ToolAdd, ToolSet:
 			if tool.Layer == nil {
 				return fmt.Errorf("tools[%d] %s 缺少 layer", i, k)
@@ -398,6 +428,10 @@ func normTool(t string) string {
 		return ToolQrcode
 	case ToolQrdecode, "qr_scan", "qrdecode_image", "解析二维码", "扫码":
 		return ToolQrdecode
+	case ToolOCR, "文字识别", "识别文字", "ocr_image", "recognize":
+		return ToolOCR
+	case ToolHTMLRender, "html", "html2img", "html_to_image", "网页渲染", "渲染html", "html截图":
+		return ToolHTMLRender
 	case ToolAdd, "addlayer":
 		return ToolAdd
 	case ToolSet, "setlayer":
@@ -663,6 +697,8 @@ func (s *renderState) assetTable() string {
 			kind = "生成图"
 		case "stock":
 			kind = "素材图"
+		case "html":
+			kind = "HTML渲染图"
 		case "edit":
 			kind = "中间产物"
 		}

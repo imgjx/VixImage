@@ -46,6 +46,15 @@
     </div>
 
     <div class="panel">
+      <h3>{{ t('config.ocrHtml') }}</h3>
+      <p class="hint">{{ t('config.ocrHtmlTip') }}</p>
+      <div class="row">
+        <div><label>{{ t('config.ocrLang') }}</label><input v-model="f.ocr_lang" placeholder="ch" /></div>
+        <div><label>{{ t('config.chromeBin') }}</label><input v-model="f.chrome_bin" placeholder="/usr/bin/google-chrome" /></div>
+      </div>
+    </div>
+
+    <div class="panel">
       <h3>{{ t('config.account') }}</h3>
       <div class="row">
         <div><label>{{ t('config.username') }}</label><input v-model="acc.username" /></div>
@@ -76,7 +85,8 @@ async function load(){
   try {
     const c = await api('/api/config')
     f.value = Object.assign({ gui_port:8080, api_port:8090, storage_mode:'sqlite', cache_mode:'file',
-      image_engine:'go', redis_db:0, delete_outputs:false, stock_openverse_base:'', stock_pexels_key:'', stock_pixabay_key:'' }, c)
+      image_engine:'go', redis_db:0, delete_outputs:false, stock_openverse_base:'', stock_pexels_key:'', stock_pixabay_key:'',
+      ocr_lang:'ch', chrome_bin:'' }, c)
     acc.value.username = c.gui_user||''
   } catch(e){}
 }
@@ -89,7 +99,7 @@ async function save(){
       cache_mode:f.value.cache_mode, redis_addr:f.value.redis_addr, redis_db:f.value.redis_db,
       redis_pass:f.value.redis_pass, delete_outputs:f.value.delete_outputs,
       stock_openverse_base:f.value.stock_openverse_base, stock_pexels_key:f.value.stock_pexels_key,
-      stock_pixabay_key:f.value.stock_pixabay_key
+      stock_pixabay_key:f.value.stock_pixabay_key, ocr_lang:f.value.ocr_lang, chrome_bin:f.value.chrome_bin
     }})
     await api('/api/user',{method:'POST',body:{
       username:acc.value.username, old_password:acc.value.old_password, new_password:acc.value.new_password

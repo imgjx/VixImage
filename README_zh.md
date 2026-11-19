@@ -9,8 +9,9 @@
 ## 特性
 
 - **自循环 Agent** — 每次大模型请求 = 1 步；状态跨轮累积；一轮一批工具；链底工具 `view`/`finish`；交付前系统强制回看成片自检。
-- **纯图像技能** — `canvas`、`gen`、`stock`、`qrcode`、`qrdecode`、`add/set/del/clear`、`layers`、`copy`、`undo`、`view`、`finish`。详见[技能与图层](docs/zh/skills.md)。
+- **纯图像技能** — `canvas`、`gen`、`stock`、`qrcode`、`qrdecode`、`ocr`、`htmlrender`、`add/set/del/clear`、`layers`、`copy`、`undo`、`view`、`finish`。详见[技能与图层](docs/zh/skills.md)。
 - **免版权素材库** — `stock` 技能从 Openverse（免密钥）、Pexels、Pixabay 搜索真实可授权图片并嵌入海报。
+- **OCR 与 HTML 渲染** — `ocr` 用 PaddleOCR 识别图片文字（文本回灌模型）；`htmlrender` 用无头 Chrome 把 HTML 精确渲染成图片产物。
 - **主动创意构图** — 把参考图变成画面里的物件（斜放屏幕 / 相框 / 画中画），用 `persp`/`shear` 做透视贴合。
 - **广泛的上游兼容** — OpenAI Images、Gemini、Stability、OpenAI Chat（流式）、Anthropic。详见[上游兼容格式](docs/zh/upstream-formats.md)。
 - **有容错、无臆造** — 解析容错、429 退避、单轮容错重输出、索引越界跳过；硬错误仍直接报错。详见[自循环工作流](docs/zh/agent-workflow.md)。

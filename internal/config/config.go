@@ -58,6 +58,12 @@ type Config struct {
 	StockOpenverseBase string `json:"stock_openverse_base"` // 可选自定义 Openverse 端点
 	StockPexelsKey     string `json:"stock_pexels_key"`
 	StockPixabayKey    string `json:"stock_pixabay_key"`
+
+	// OCR 技能（PaddleOCR）：默认识别语言（ch/en/...），留空取 ch。
+	OCRLang string `json:"ocr_lang"`
+
+	// htmlrender 技能：Chrome/Chromium 可执行路径，留空则自动探测。
+	ChromeBin string `json:"chrome_bin"`
 }
 
 // Default returns a config populated with sensible defaults.
@@ -87,6 +93,7 @@ func Default() *Config {
 		CacheFileDir: filepath.Join(dataDir, "cache"),
 		PythonBin:    "python3",
 		ImageEngine:  "go",
+		OCRLang:      "ch",
 	}
 }
 
