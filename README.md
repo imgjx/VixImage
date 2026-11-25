@@ -9,9 +9,10 @@ Layout is fully planned by the LLM — no templates. Canvas size (portrait / lan
 ## Features
 
 - **Self-looping Agent** — each turn = one LLM request; state accumulates across turns; a batch of tools per turn; bottom tools `view`/`finish`; system-enforced visual self-check before delivery.
-- **Image-only skills** — `canvas`, `gen`, `stock`, `qrcode`, `qrdecode`, `ocr`, `htmlrender`, `add/set/del/clear`, `layers`, `copy`, `undo`, `view`, `finish`. See [Skills](docs/en/skills.md).
+- **Image-only skills** — `canvas`, `gen`, `stock`, `qrcode`, `qrdecode`, `ocr`, `htmlrender`, `svgrender`, `add/set/del/clear`, `layers`, `copy`, `undo`, `view`, `finish`. See [Skills](docs/en/skills.md).
 - **Royalty-free stock library** — the `stock` skill searches Openverse (no key), Pexels and Pixabay for real, licensable images and embeds them into posters.
-- **OCR & HTML rendering** — `ocr` recognizes text in images via PaddleOCR (fed back to the model); `htmlrender` precisely renders HTML into an image asset with headless Chrome.
+- **OCR & HTML/SVG rendering** — `ocr` recognizes text in images via PaddleOCR (fed back to the model); `htmlrender`/`svgrender` precisely render HTML/SVG into image assets with headless Chrome.
+- **Precision positioning** — layers support nine-grid anchors `pos` (auto center/edge with safe insets), percentage coordinates `px/py/pw/ph`, and pixel offsets `ox/oy`, so the model never has to mentally compute large pixel values — dramatically more accurate placement with no offsets or overflow.
 - **Proactive creative composition** — reference images become objects inside a scene (slanted screens, frames, picture-in-picture) with `persp`/`shear` perspective fitting.
 - **Broad upstream compatibility** — OpenAI Images, Gemini, Stability, OpenAI Chat (streaming) and Anthropic. See [Upstream Formats](docs/en/upstream-formats.md).
 - **Tolerant, never fabricating** — parse tolerance, 429 backoff, same-turn retry on bad output, index-skip; hard errors remain hard. See [Agent Workflow](docs/en/agent-workflow.md).

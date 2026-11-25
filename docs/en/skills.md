@@ -11,7 +11,8 @@ An Agent turn's `{think, tools[]}` contains the following skills in `tools`. Eac
 | `qrdecode` | Decode QR content (read-only) | `src` |
 | `ocr` | **PaddleOCR text recognition** (read-only) | `src`,`lang` |
 | `htmlrender` | **Render HTML to image** → asset (free) | `id`,`html`,`w`,`h` |
-| `add` / `set` | Append/replace layer | `layer` or `layer:[...]`,`i` |
+| `svgrender` | **Render SVG to image** → asset (free) | `id`,`svg`,`w`,`h` |
+| `add` / `set` | Append/replace layer (supports **precision positioning**) | `layer` or `layer:[...]`,`i` |
 | `del` / `clear` | Delete layer i / clear all | `i` |
 | `layers` | List current layers | — |
 | `copy` | Copy an asset to a new id | `src`,`as` |
@@ -59,6 +60,40 @@ The `ocr` skill uses **PaddleOCR** to recognize text in an image; the recognized
 - Zero step cost; the rendered result is fed back as a thumbnail for self-check.
 - Requires Chrome/Chromium: when the config path is blank, it auto-detects `google-chrome`/`chromium` etc., or you can set an explicit path in Settings → Chrome Path. Without a browser it reports a clear error — never returns a placeholder image.
 
+## SVG Rendering (`svgrender`)
+
+`svgrender` rasterizes an SVG into a PNG with headless Chrome and registers it as an asset — ideal for **precise geometric shapes, icons, logos, charts, and vector text paths** (vector scales without pixelation, sharper than bitmaps):
+
+```
+{"t":"svgrender","id":"badge","svg":"<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><circle cx='200' cy='200' r='180' fill='#7ee2a8'/></svg>","w":400,"h":400}
+```
+
+- `svg` is a complete `<svg>...</svg>` document; the skill wraps it in a fixed-size document with a reset stylesheet to avoid white borders.
+- `w`/`h`: output size, default 1080×1920; the asset can be used as an `img` layer `src`.
+- Zero step cost; the rendered result is fed back as a thumbnail for self-check.
+- Requires Chrome/Chromium (shares Settings → Chrome Path with `htmlrender`); reports a clear error if no browser is installed.
+
+## Precision Positioning
+
+Layer placement is upgraded from "mental pixel math" to **semantic anchors + percentages + safe insets**, greatly improving landing accuracy and preventing offsets/overflow. Use either method (they can be combined); if neither is set, the original absolute `x/y/w/h` applies (fully backward compatible).
+
+**① Nine-grid anchor `pos` + offsets**
+```
+{"t":"add","layer":{"k":"text","s":"Title","pos":"tc","oy":120,"size":88,"anchor":"ma"}}
+```
+- `pos`: `tl/tc/tr` (top-left/center/right), `ml/mc/mr` (middle-left/center/right), `bl/bc/br` (bottom-left/center/right); also accepts aliases like `center`, `左上`, `居中上`.
+- The element box is pinned to the anchor with a safe inset (default 4% of the shorter canvas side); `inset` customizes the margin in pixels.
+- `ox`/`oy`: pixel offsets relative to the anchor (may be negative). Use `pos:"tc"` for auto top-center titles, `"bc"` for bottom-center footers, `"tr"` for corner badges — no coordinate math needed.
+
+**② Percentage coordinates `px/py/pw/ph`**
+```
+{"t":"add","layer":{"k":"img","src":"hero","px":10,"py":20,"pw":80,"ph":30}}
+```
+- Values 0~100 (or 0~1), relative to canvas width/height: `px/py` position, `pw/ph` size.
+- In-box text alignment is still controlled by `anchor`.
+- Both methods can be combined: `pos` for anchor, `pw/ph` for size, `ox/oy` for fine-tuning. When moving things, prefer `pos`/`px`/`py` over hand-editing large pixel values.
+- The `layers{}` table annotates each layer's anchor/percentage for easy `set` fine-tuning.
+
 ## Layer Capabilities (`add` / `set` `layer`)
 
 | Layer `k` | Capabilities |
@@ -69,10 +104,10 @@ The `ocr` skill uses **PaddleOCR** to recognize text in an image; the recognized
 | `line` / `scrim` | decorative line / gradient scrim (`dir` marks the darkest side) |
 | `canvas` | arbitrary W×H (portrait/landscape/square), gradient or solid background |
 
-`src` may reference: a `gen`/`stock`/`htmlrender` asset id, `ref:N` (Nth input image), a `copy` `as`, or an image URL / data URI. Combine `cut`/`blur`/`rot`/`persp`/`shear`/`circle` with `ref:N` to edit a reference image and fit it into any region.
+`src` may reference: a `gen`/`stock`/`htmlrender`/`svgrender` asset id, `ref:N` (Nth input image), a `copy` `as`, or an image URL / data URI. Combine `cut`/`blur`/`rot`/`persp`/`shear`/`circle` with `ref:N` to edit a reference image and fit it into any region.
 
 Fonts are auto-detected: prefer `Noto Sans CJK`, compatible with `.otf` and `WenQuanYi`/`PingFang`; Chinese text falls back to a CJK font to avoid tofu boxes.
 
 ## Limits
 
-`MaxTextRunes=240` (per text), `MaxLayerCount=80`, `MaxQRText=800`, `MaxHTMLRunes=40000` (per HTML snippet), `MaxUndoSteps=24`, `MaxOutputPerView=6`, `MaxForceReviews=3`; `stock` `n≤8` per call.
+`MaxTextRunes=240` (per text), `MaxLayerCount=80`, `MaxQRText=800`, `MaxHTMLRunes=40000` (per HTML snippet), `MaxSVGRunes=40000` (per SVG snippet), `MaxUndoSteps=24`, `MaxOutputPerView=6`, `MaxForceReviews=3`; `stock` `n≤8` per call.

@@ -27,11 +27,11 @@ GUI 控制台默认 `http://localhost:8080`（账号密码登录），API 服务
 仓库根目录已提供多阶段 `Dockerfile`（编译用 golang:1.21-alpine，运行用 alpine，含 Python/PIL 可选引擎与中文字体）。
 
 ```bash
-docker build -t viximage:0.2.1 --build-arg VERSION=0.2.1 .
+docker build -t viximage:0.2.2 --build-arg VERSION=0.2.2 .
 docker run -d --name viximage \
   -p 8080:8080 -p 8090:8090 \
   -v viximage-data:/data \
-  viximage:0.2.1
+  viximage:0.2.2
 ```
 
 也可以直接用 compose：

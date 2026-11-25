@@ -461,7 +461,7 @@ func TestCircleKindAlias(t *testing.T) {
 		t.Fatalf("r=80 应换算成 160x160: %+v", l)
 	}
 	resolve := func(s string) (string, error) { return s, nil }
-	item, err := l.toItem(resolve)
+	item, err := l.toItem(resolve, 1080, 1920)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,5 +863,83 @@ func TestOCRAndHTMLRenderTool(t *testing.T) {
 	_ = json.Unmarshal([]byte(bad2), &t3)
 	if err := validateTurn(&t3, 0); err == nil {
 		t.Fatal("ocr 缺 src 应报错")
+	}
+}
+
+// TestSVGRenderTool：svgrender 工具的解析、别名、校验。
+func TestSVGRenderTool(t *testing.T) {
+	raw := `{"tools":[{"t":"svgrender","id":"logo","svg":"<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><circle cx='200' cy='200' r='100'/></svg>","w":400,"h":400}]}`
+	var turn Turn
+	if err := json.Unmarshal([]byte(raw), &turn); err != nil {
+		t.Fatalf("解析 svgrender 失败: %v", err)
+	}
+	if len(turn.Tools) != 1 || normTool(turn.Tools[0].T) != ToolSVGRender {
+		t.Fatalf("svgrender 工具解析错误: %+v", turn.Tools)
+	}
+	if !strings.Contains(turn.Tools[0].SVG, "<svg") || turn.Tools[0].W != 400 {
+		t.Fatalf("svgrender 字段解析错误: %+v", turn.Tools[0])
+	}
+	if err := validateTurn(&turn, 0); err != nil {
+		t.Fatalf("合法 svgrender 不应报错: %v", err)
+	}
+	if !hasImageOutput(ToolSVGRender) || !isEditingTool(ToolSVGRender) {
+		t.Fatal("svgrender 应产生可回灌图像输出且算编辑工具")
+	}
+	if normTool("svg") != ToolSVGRender || normTool("矢量渲染") != ToolSVGRender {
+		t.Fatal("svgrender 别名未生效")
+	}
+	// 缺 svg / 非法尺寸应报错。
+	bad := `{"tools":[{"t":"svgrender","id":"x"}]}`
+	var t2 Turn
+	_ = json.Unmarshal([]byte(bad), &t2)
+	if err := validateTurn(&t2, 0); err == nil {
+		t.Fatal("svgrender 缺 svg 应报错")
+	}
+	bad2 := `{"tools":[{"t":"svgrender","id":"x","svg":"<svg/>","w":100}]}`
+	var t3 Turn
+	_ = json.Unmarshal([]byte(bad2), &t3)
+	if err := validateTurn(&t3, 0); err == nil {
+		t.Fatal("svgrender 宽 100 应报错")
+	}
+}
+
+// TestPrecisionPositionInLayer：坐标定点字段从 JSON 解析并经 toItem 换算成绝对像素。
+func TestPrecisionPositionInLayer(t *testing.T) {
+	raw := `{"tools":[
+		{"t":"add","layer":{"k":"text","s":"标题","pos":"tc","oy":40,"size":80}},
+		{"t":"add","layer":{"k":"img","src":"hero","px":10,"py":20,"pw":80,"ph":30}}
+	]}`
+	var turn Turn
+	if err := json.Unmarshal([]byte(raw), &turn); err != nil {
+		t.Fatalf("解析定点图层失败: %v", err)
+	}
+	if err := validateTurn(&turn, 0); err != nil {
+		t.Fatalf("合法定点图层不应报错: %v", err)
+	}
+	l0 := turn.Tools[0].Layer
+	if l0.Pos != "tc" || l0.OY != 40 {
+		t.Fatalf("锚点字段解析错误: %+v", l0)
+	}
+	l1 := turn.Tools[1].Layer
+	if l1.PX != 10 || l1.PY != 20 || l1.PW != 80 || l1.PH != 30 {
+		t.Fatalf("百分比字段解析错误: %+v", l1)
+	}
+
+	resolve := func(s string) (string, error) { return s, nil }
+	// 顶部居中：x=(1080-w)/2；文字无 w → x=540（配合 anchor ma 居中）；y=inset(43)+oy(40)=83。
+	it0, err := l0.toItem(resolve, 1080, 1920)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it0.X != 540 || it0.Y != 43+40 {
+		t.Fatalf("text 锚点定点换算错误: %+v", it0)
+	}
+	// 百分比：x=108, y=384, w=864, h=576。
+	it1, err := l1.toItem(resolve, 1080, 1920)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it1.X != 108 || it1.Y != 384 || it1.W != 864 || it1.H != 576 {
+		t.Fatalf("百分比定点换算错误: %+v", it1)
 	}
 }

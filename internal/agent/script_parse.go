@@ -179,6 +179,10 @@ func fillTool(t *Tool, m map[string]json.RawMessage) {
 	if v, ok := g("html", "html_content", "markup"); ok {
 		t.HTML = toStr(v)
 	}
+	// svgrender —— SVG 字符串（兼容 svg_content / svg_markup 别名）。
+	if v, ok := g("svg", "svg_content", "svg_markup"); ok {
+		t.SVG = toStr(v)
+	}
 	if v, ok := g("as", "to", "new_id", "dest", "copy_to"); ok {
 		t.As = toStr(v)
 	}
@@ -352,6 +356,31 @@ func fillLayer(l *LayerSpec, m map[string]json.RawMessage) {
 	}
 	if v, ok := g("strength"); ok {
 		l.Strength = numToFloat(v)
+	}
+	// 坐标定点（Precision Positioning）——语义锚点 + 偏移 + 百分比。
+	if v, ok := g("pos", "anchor9", "grid", "position"); ok {
+		l.Pos = toStr(v)
+	}
+	if v, ok := g("ox", "dx", "offset_x"); ok {
+		l.OX = int(numToFloat(v))
+	}
+	if v, ok := g("oy", "dy", "offset_y"); ok {
+		l.OY = int(numToFloat(v))
+	}
+	if v, ok := g("inset", "pad", "margin"); ok {
+		l.Inset = int(numToFloat(v))
+	}
+	if v, ok := g("px", "left_pct", "xp"); ok {
+		l.PX = numToFloat(v)
+	}
+	if v, ok := g("py", "top_pct", "yp"); ok {
+		l.PY = numToFloat(v)
+	}
+	if v, ok := g("pw", "w_pct", "wp"); ok {
+		l.PW = numToFloat(v)
+	}
+	if v, ok := g("ph", "h_pct", "hp"); ok {
+		l.PH = numToFloat(v)
 	}
 	// circle 常用 r 表示半径；换算成 rect 的 w/h，渲染时再取圆角画圆。
 	if strings.EqualFold(l.K, "circle") && l.W == 0 {

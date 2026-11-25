@@ -22,6 +22,7 @@ const (
 	MaxLayerCount    = 80    // 画布图层总数上限
 	MaxQRText        = 800   // 单个二维码内容字符上限
 	MaxHTMLRunes     = 40000 // 单个 htmlrender 的 HTML 字符串字符上限（防注入/爆量）
+	MaxSVGRunes      = 40000 // 单个 svgrender 的 SVG 字符串字符上限（防注入/爆量）
 	MaxOutputPerView = 6     // 单次回灌给大模型的图片数上限
 	DefaultGenCost   = 30    // 引擎未配置时的默认生图消耗步数
 	MaxForceReviews  = 3     // 交付前「系统级强制 view」最多回看次数（防小模型反复改动耗光步数）
@@ -48,6 +49,7 @@ type Turn struct {
 //	qrdecode 解析二维码内容        src
 //	ocr    PaddleOCR 识别图片文字(只读) src,lang ← 文本回灌下一轮
 //	htmlrender HTML 渲染成图片(有产物) id,html,w,h ← Chrome 无头截图
+//	svgrender SVG 渲染成图片(有产物)  id,svg,w,h ← Chrome 无头光栅化(矢量精确)
 //	add    追加一个图层           layer
 //	set    替换第 i 个图层        i,layer
 //	del    删除第 i 个图层        i
@@ -94,6 +96,9 @@ type Tool struct {
 	// htmlrender —— HTML 是要渲染的 HTML 字符串；W/H 为输出画布尺寸。
 	HTML string `json:"html"`
 
+	// svgrender —— SVG 是要渲染的 SVG 字符串；W/H 为输出画布尺寸。
+	SVG string `json:"svg"`
+
 	// add / set / del —— Layers 由解析层在 layer 写成数组时展开（一轮可一次加多个图层）。
 	Layer  *LayerSpec  `json:"layer"`
 	Layers []LayerSpec `json:"-"`
@@ -119,6 +124,7 @@ const (
 	ToolQrdecode   = "qrdecode"
 	ToolOCR        = "ocr"
 	ToolHTMLRender = "htmlrender"
+	ToolSVGRender  = "svgrender"
 	ToolAdd        = "add"
 	ToolSet        = "set"
 	ToolDel        = "del"
@@ -220,7 +226,7 @@ func isBottomTool(t string) bool { return t == ToolView || t == ToolFinish }
 // 定稿规则：只有 GenImage 图像生成 与 图像查看(view) 会输出结果图，
 // 其余编辑类工具（含 copy/undo/layers）只回「是否成功编辑」的状态文本。
 func hasImageOutput(t string) bool {
-	return t == ToolGen || t == ToolStock || t == ToolView || t == ToolHTMLRender
+	return t == ToolGen || t == ToolStock || t == ToolView || t == ToolHTMLRender || t == ToolSVGRender
 }
 
 // copyDest 取 copy 的新产物 id：优先 as，其次沿用 gen 习惯的 id。
@@ -235,7 +241,7 @@ func copyDest(t Tool) string {
 // view/finish 只读或收尾，layers/undo 不改状态，均不算编辑。
 func isEditingTool(t string) bool {
 	switch t {
-	case ToolCanvas, ToolGen, ToolStock, ToolAdd, ToolSet, ToolDel, ToolClear, ToolCopy, ToolQrcode, ToolHTMLRender:
+	case ToolCanvas, ToolGen, ToolStock, ToolAdd, ToolSet, ToolDel, ToolClear, ToolCopy, ToolQrcode, ToolHTMLRender, ToolSVGRender:
 		return true
 	}
 	return false
@@ -343,6 +349,19 @@ func validateTurn(t *Turn, nInputs int) error {
 			if (tool.W != 0 && (tool.W < 200 || tool.W > 4096)) || (tool.H != 0 && (tool.H < 200 || tool.H > 4096)) {
 				return fmt.Errorf("tools[%d] htmlrender 宽高非法（200~4096，0 取默认）：%dx%d", i, tool.W, tool.H)
 			}
+		case ToolSVGRender:
+			if strings.TrimSpace(tool.ID) == "" {
+				return fmt.Errorf("tools[%d] svgrender 缺少 id", i)
+			}
+			if strings.TrimSpace(tool.SVG) == "" {
+				return fmt.Errorf("tools[%d] svgrender 缺少 svg（要渲染的 SVG 字符串）", i)
+			}
+			if len([]rune(tool.SVG)) > MaxSVGRunes {
+				return fmt.Errorf("tools[%d] svgrender SVG 长度 %d 超过上限 %d", i, len([]rune(tool.SVG)), MaxSVGRunes)
+			}
+			if (tool.W != 0 && (tool.W < 200 || tool.W > 4096)) || (tool.H != 0 && (tool.H < 200 || tool.H > 4096)) {
+				return fmt.Errorf("tools[%d] svgrender 宽高非法（200~4096，0 取默认）：%dx%d", i, tool.W, tool.H)
+			}
 		case ToolAdd, ToolSet:
 			if tool.Layer == nil {
 				return fmt.Errorf("tools[%d] %s 缺少 layer", i, k)
@@ -432,6 +451,8 @@ func normTool(t string) string {
 		return ToolOCR
 	case ToolHTMLRender, "html", "html2img", "html_to_image", "网页渲染", "渲染html", "html截图":
 		return ToolHTMLRender
+	case ToolSVGRender, "svg", "svg2img", "svg_to_image", "矢量渲染", "渲染svg", "svg截图":
+		return ToolSVGRender
 	case ToolAdd, "addlayer":
 		return ToolAdd
 	case ToolSet, "setlayer":
@@ -676,7 +697,17 @@ func (s *renderState) layerTable() string {
 		case "image":
 			hint = "src=" + truncateStr(l.Src, 24)
 		}
-		fmt.Fprintf(&b, " #%d %s @%d,%d %dx%d %s\n", i, normKind(l.K), l.X, l.Y, l.W, l.H, hint)
+		// 有定点意图的图层标注锚点/百分比，便于后续 set 精调。
+		posHint := ""
+		if strings.TrimSpace(l.Pos) != "" {
+			posHint = " pos=" + l.Pos
+			if l.OX != 0 || l.OY != 0 {
+				posHint += fmt.Sprintf("(+%d,%d)", l.OX, l.OY)
+			}
+		} else if l.PX != 0 || l.PY != 0 || l.PW != 0 || l.PH != 0 {
+			posHint = fmt.Sprintf(" pct=(%.1f,%.1f,%.1f,%.1f)", l.PX, l.PY, l.PW, l.PH)
+		}
+		fmt.Fprintf(&b, " #%d %s @%d,%d %dx%d%s %s\n", i, normKind(l.K), l.X, l.Y, l.W, l.H, posHint, hint)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -699,6 +730,8 @@ func (s *renderState) assetTable() string {
 			kind = "素材图"
 		case "html":
 			kind = "HTML渲染图"
+		case "svg":
+			kind = "SVG渲染图"
 		case "edit":
 			kind = "中间产物"
 		}
@@ -728,7 +761,7 @@ func (s *renderState) BuildSpec(resolve func(string) (string, error), output str
 		spec.BG = &skills.BGSpec{Type: "gradient", Colors: cols, Angle: s.canvas.Angle}
 	}
 	for i, l := range s.layers {
-		item, err := l.toItem(resolve)
+		item, err := l.toItem(resolve, spec.Width, spec.Height)
 		if err != nil {
 			return nil, fmt.Errorf("图层[%d] 执行失败: %w", i, err)
 		}
@@ -805,6 +838,17 @@ type LayerSpec struct {
 	Width    int     `json:"width"`
 	Dir      string  `json:"dir"`
 	Strength float64 `json:"strength"`
+
+	// 坐标定点（Precision Positioning）——语义锚点 + 百分比，渲染前换算成绝对像素。
+	// 不填则完全沿用上面的 x/y/w/h 绝对像素（向后兼容）。
+	Pos   string  `json:"pos"`   // 九宫格锚点 tl/tc/tr/ml/mc/mr/bl/bc/br + 中英文别名
+	OX    int     `json:"ox"`    // 相对锚点的水平像素偏移（可负）
+	OY    int     `json:"oy"`    // 相对锚点的垂直像素偏移（可负）
+	Inset int     `json:"inset"` // 锚点到边缘的安全内边距（像素，<=0 取短边 4%）
+	PX    float64 `json:"px"`    // 左/中心 x 百分比（0~100 或 0~1）
+	PY    float64 `json:"py"`    // 上/中心 y 百分比
+	PW    float64 `json:"pw"`    // 宽百分比
+	PH    float64 `json:"ph"`    // 高百分比
 }
 
 func normKind(k string) string {
@@ -830,10 +874,17 @@ func isRemote(s string) bool {
 		strings.HasPrefix(s, "data:") || strings.HasPrefix(s, "/")
 }
 
-func (l LayerSpec) toItem(resolve func(string) (string, error)) (skills.SpecItem, error) {
+func (l LayerSpec) toItem(resolve func(string) (string, error), cw, ch int) (skills.SpecItem, error) {
 	k := normKind(l.K)
+	// 坐标定点：把语义锚点/百分比换算成绝对像素；无定点意图时原样返回。
+	ps := skills.PositionSpec{
+		Pos: l.Pos, OX: l.OX, OY: l.OY, Inset: l.Inset,
+		PX: l.PX, PY: l.PY, PW: l.PW, PH: l.PH,
+		HasPX: l.PX != 0, HasPY: l.PY != 0, HasPW: l.PW != 0, HasPH: l.PH != 0,
+	}
+	pos := skills.ResolvePosition(ps, l.X, l.Y, l.W, l.H, cw, ch)
 	it := skills.SpecItem{
-		Type: k, X: l.X, Y: l.Y, W: l.W, H: l.H,
+		Type: k, X: pos.X, Y: pos.Y, W: pos.W, H: pos.H,
 		Opacity: l.Opacity, Color: l.Color, Alpha: l.Alpha,
 	}
 	switch k {
@@ -881,11 +932,12 @@ func (l LayerSpec) toItem(resolve func(string) (string, error)) (skills.SpecItem
 		it.Width = l.Width
 	case "circle":
 		// 圆形是明确的图形意图：用带圆角的填充矩形绘制，无需改底层渲染器。
+		// 用换算后的 it.W/it.H，使百分比/锚点定点对圆也生效。
 		it.Type = "rect"
 		it.Fill = true
-		it.Radius = l.W / 2
+		it.Radius = it.W / 2
 		if it.Radius <= 0 {
-			it.Radius = l.H / 2
+			it.Radius = it.H / 2
 		}
 	case "line":
 		it.P1 = []int{l.X1, l.Y1}

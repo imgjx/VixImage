@@ -578,6 +578,31 @@ func (r *Runtime) Run(req RunRequest) (*RunResult, error) {
 					outDesc = append(outDesc, fmt.Sprintf("已渲染 HTML 产物 %s（见附图）", tool.ID))
 				}
 				ops = append(ops, fmt.Sprintf("htmlrender %s", tool.ID))
+			case ToolSVGRender:
+				// SVG 渲染成图片 → 登记为产物（零步消耗），可当 img 图层 src 嵌进海报。
+				w, h := tool.W, tool.H
+				if w == 0 {
+					w = 1080
+				}
+				if h == 0 {
+					h = 1920
+				}
+				pngPath, e := skills.RenderSVG(tool.SVG, r.cfg.ChromeBin, tmpDir, w, h)
+				if e != nil {
+					return r.fail(log, res, fmt.Errorf("第 %d 步 svgrender「%s」: %w", step, tool.ID, e))
+				}
+				if e := st.addAsset(tool.ID, &assetEntry{
+					Path: pngPath, Kind: "svg", Size: fmt.Sprintf("%dx%d", w, h),
+					Desc: fmt.Sprintf("SVG渲染 %dx%d", w, h),
+				}); e != nil {
+					return r.fail(log, res, fmt.Errorf("第 %d 步 svgrender: %w", step, e))
+				}
+				uri, e := encodeImageDataURI(pngPath, 1024)
+				if e == nil {
+					outImages = append(outImages, uri)
+					outDesc = append(outDesc, fmt.Sprintf("已渲染 SVG 产物 %s（见附图）", tool.ID))
+				}
+				ops = append(ops, fmt.Sprintf("svgrender %s", tool.ID))
 			case ToolView:
 				// 链底工具：查看 canvas 或指定产物（可多张），产出结果图回灌下一轮。
 				for i, s := range tool.Srcs {
